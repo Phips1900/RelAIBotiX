@@ -38,17 +38,17 @@ class RoboticSystem:
         return True
 
     def add_component(self, component):
-        """@brief adds a component to the list of components"""
+        """@brief adds a component object to the list of component objects"""
         self.components.append(component)
         return True
 
     def add_failure_mode(self, failure_mode):
-        """@brief adds a failure mode to the list of failure modes"""
+        """@brief adds a failure mode object to the list of failure mode objects"""
         self.failure_modes.append(failure_mode)
         return True
 
     def get_skills(self):
-        """@brief returns the list of skills"""
+        """@brief returns the list of skill objects"""
         return self.skills
 
     def get_system_failure_prob(self):
@@ -65,11 +65,11 @@ class RoboticSystem:
         return True
 
     def get_components(self):
-        """@brief returns the list of components"""
+        """@brief returns the list of component objects"""
         return self.components
 
     def get_failure_modes(self):
-        """@brief returns the list of failure modes"""
+        """@brief returns the list of failure mode objects"""
         return self.failure_modes
 # End of class RoboticSystem
 

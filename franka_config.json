@@ -1,0 +1,53 @@
+{
+  "robot": "Franka Emika Panda",
+  "components": {
+    "Joint_1": {
+      "failure_probability": 0.01,
+      "redundancy": false
+    },
+    "Joint_2": {
+      "failure_probability": 0.01,
+      "redundancy": false
+    },
+    "Joint_3": {
+      "failure_probability": 0.01,
+      "redundancy": false
+    },
+    "Joint_4": {
+      "failure_probability": 0.01,
+      "redundancy": false
+    },
+    "Joint_5": {
+      "failure_probability": 0.01,
+      "redundancy": false
+    },
+    "Joint_6": {
+      "failure_probability": 0.01,
+      "redundancy": false
+    },
+    "Joint_7": {
+      "failure_probability": 0.01,
+      "redundancy": false
+    },
+    "Controller": {
+      "failure_probability": 0.005,
+      "redundancy": true
+    },
+    "Power_Supply": {
+      "failure_probability": 0.003,
+      "redundancy": true
+    },
+    "Gripper": {
+      "failure_probability": 0.02,
+      "redundancy": false
+    },
+    "Camera": {
+      "failure_probability": 0.015,
+      "redundancy": false
+    },
+    "Sensors": {
+      "failure_probability": 0.01,
+      "redundancy": false
+    }
+  }
+}
