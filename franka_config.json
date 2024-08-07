@@ -1,5 +1,6 @@
 {
   "robot": "Franka Emika Panda",
+  "robot_type": "Manipulator",
   "components": {
     "Joint_1": {
       "failure_probability": 0.01,
