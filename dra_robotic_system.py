@@ -11,9 +11,10 @@ class RoboticSystem:
     """
     @brief RoboticSystem class
     """
-    def __init__(self, name):
+    def __init__(self, name, robot_type=''):
         """@brief constructor"""
         self.name = name
+        self.type = robot_type
         self.components = []
         self.skills = []
         self.system_failure_prob = 0
@@ -22,6 +23,7 @@ class RoboticSystem:
     def clear(self):
         """@brief clears all elements of the class RoboticSystem"""
         self.name = ""
+        self.type = ""
         self.components.clear()
         self.skills.clear()
         self.system_failure_prob = 0.0
@@ -71,6 +73,15 @@ class RoboticSystem:
     def get_failure_modes(self):
         """@brief returns the list of failure mode objects"""
         return self.failure_modes
+
+    def set_robot_type(self, robot_type):
+        """@brief sets the robot type"""
+        self.type = robot_type
+        return True
+
+    def get_robot_type(self):
+        """@brief returns the robot type"""
+        return self.type
 # End of class RoboticSystem
 
 
@@ -78,19 +89,21 @@ class Skill:
     """
     @brief Skill class
     """
-    def __init__(self, name):
+    def __init__(self, name, id=None):
         """@brief constructor"""
         self.name = name
+        self.id = id
         self.components = []
         self.failure_modes = []
-        self.skill_failure_prob = 0
+        self.skill_failure_prob = 0.0
 
     def clear(self):
         """@brief clears all elements of the class Skill"""
         self.name = ""
+        self.id = None
         self.components.clear()
         self.failure_modes.clear()
-        self.skill_failure_prob = 0
+        self.skill_failure_prob = 0.0
 
     def get_name(self):
         """@brief returns the name of the skill"""
@@ -99,6 +112,15 @@ class Skill:
     def set_name(self, name):
         """@brief sets the name of the skill"""
         self.name = name
+        return True
+
+    def get_id(self):
+        """@brief returns the id of the skill"""
+        return self.id
+
+    def set_id(self, id):
+        """@brief sets the id of the skill"""
+        self.id = id
         return True
 
     def set_skill_failure_prob(self, prob):
@@ -112,14 +134,20 @@ class Skill:
 
     def add_component(self, component):
         """@brief adds a component to the list of components"""
-        self.components.append(component.name)
+        if isinstance(component, str):
+            if component not in self.components:
+                self.components.append(component)
+        elif isinstance(component, list):
+            self.components = component
+        else:
+            raise ValueError("Input must be either a string or a list")
         return True
 
-    def remove_component(self, component):
+    def remove_component(self, component_name):
         """@brief removes a component from the list of components"""
-        if component.name not in self.components:
+        if component_name not in self.components:
             return False
-        self.components.remove(component.name)
+        self.components.remove(component_name)
         return True
 
     def add_failure_mode(self, failure_mode):
@@ -140,13 +168,13 @@ class Component:
     """
     @brief Component class
     """
-    def __init__(self, name):
+    def __init__(self, name, failure_prob=0.0, redundancy=False):
         """@brief constructor"""
         self.name = name
         self.properties = {}
         self.skills = []
-        self.failure_prob = 0.0
-        self.redundancy = False
+        self.failure_prob = failure_prob
+        self.redundancy = redundancy
 
     def clear(self):
         """@brief clears all elements of the class Component"""
@@ -167,7 +195,8 @@ class Component:
 
     def add_property(self, property_name, value, skill):
         """@brief adds a property to the list of properties"""
-        self.properties[property_name] = {}
+        if property_name not in self.properties:
+            self.properties[property_name] = {}
         self.properties[property_name][skill] = value
         return True
 

@@ -45,7 +45,8 @@ class BehavioralAnalysis:
         self.robot_type = robot_type
         return True
 
-    def detect_skill_sequence(self, skill_column):
+    def detect_skill_sequence(self):
+        skill_column = get_columns(self.robot_type)['skills']
         time_series = self.time_series[:, skill_column]
         iterator = 0
 
@@ -70,19 +71,11 @@ class BehavioralAnalysis:
     def get_skill_sequence(self):
         return self.skill_sequence
 
-    def convert_skill_sequence(self):
-        skill_sequence = self.skill_sequence
-        skill_sequence_str = []
-        for skill in skill_sequence:
-            skill_str = get_skill_string(skill)
-            skill_sequence_str.append(skill_str)
-        self.skill_sequence = skill_sequence_str
-        return True
-
     def get_skill_data_points(self):
         return self.skill_data_points
 
-    def analyze_active_components(self, component_columns):
+    def analyze_active_components(self):
+        component_columns = get_columns(self.robot_type)['components']
         time_series = self.time_series[:, component_columns]
         threshold = 0.001
         for skill, time_points in self.skill_data_points.items():
@@ -102,8 +95,9 @@ class BehavioralAnalysis:
     def get_active_components(self):
         return self.active_components
 
-    def extract_properties(self, component_columns):
-        time_series = self.time_series[:, component_columns]
+    def extract_properties(self):
+        property_columns = get_columns(self.robot_type)['properties']
+        time_series = self.time_series[:, property_columns]
         for skill, time_points in self.skill_data_points.items():
             self.extracted_properties[skill] = {}
             start_value = time_points['start']
@@ -139,19 +133,34 @@ def get_prob_factor(properties):
     return lookup_table.get(key, "Invalid properties")
 
 
-# Define the lookup table
-skill_lookup = {
-    1: 'move',
-    2: 'pick',
-    3: 'carry',
-    4: 'place',
-    5: 'object_detection',
-    6: 'reset',
-    7: 'pour',
-    8: 'shake',
-}
+def get_columns(robot_type):
+    """
+    Returns a dictionary of lists containing column indices that are interesting for components, properties, and skills,
+    depending on the robot type.
 
+    Parameters:
+    - robot_type (str): The type of the robot ('Manipulator', 'Mobile Robot', 'Undefined').
 
-# Function to get the skill string
-def get_skill_string(skill):
-    return skill_lookup.get(skill, 'Unknown skill')
+    Returns:
+    - dict: A dictionary with keys 'components', 'properties', 'skills' and values as lists of column indices.
+    """
+    robot_column_mapping = {
+        'Manipulator': {
+            'components': [0, 1, 2, 10, 11, 12, 13, 14, 15, 16],
+            'properties': [18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+            'skills': [17]
+        },
+        'Mobile Robot': {
+            'components': [10, 11, 12],
+            'properties': [13, 14, 15],
+            'skills': [16, 17, 18]
+        },
+        'Undefined': {
+            'components': [19, 20],
+            'properties': [21, 22],
+            'skills': [23, 24]
+        }
+    }
+
+    # Return the corresponding dictionary of lists or an empty dictionary if the robot type is not found
+    return robot_column_mapping.get(robot_type, {'components': [], 'properties': [], 'skills': []})

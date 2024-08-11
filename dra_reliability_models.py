@@ -5,6 +5,7 @@ reliability model class
 @version 1.0
 @date 31.07.2024
 """
+from dra_solver import *
 
 
 class HybridReliabilityModel:
@@ -61,6 +62,13 @@ class HybridReliabilityModel:
         """@brief sets the name of the HybridReliabilityModel"""
         self.name = name
         return True
+
+    def compute_system_reliability(self, ft_dict, repeat_dict={}):
+        """@brief computes the system reliability of the HybridReliabilityModel"""
+        absorption_prob, absorption_time = hybrid_solver(ft_dict=ft_dict, mc_object=self.markov_chain, repeat_dict=repeat_dict)
+        absorption_prob = absorption_prob[1, 0:6]
+        system_reliability = absorption_prob.sum()
+        return system_reliability, absorption_prob, absorption_time
 
 
 class MarkovChain:
