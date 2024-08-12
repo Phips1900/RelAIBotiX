@@ -47,7 +47,7 @@ def draw_graph(graph):
     plt.show()
 
 
-def create_custom_spider_chart(data_dict, title='Spider Diagram'):
+def create_custom_spider_chart(data_dict, title='Spider Diagram', save_path=None):
     """
     Creates a custom spider (radar) diagram based on a dictionary of components and their associated probabilities.
 
@@ -108,6 +108,91 @@ def create_custom_spider_chart(data_dict, title='Spider Diagram'):
     ax.set_facecolor('white')
     fig.patch.set_facecolor('white')
 
+    if save_path:
+        plt.savefig(save_path, format='png', bbox_inches='tight')
+
     # Show the plot
     plt.show()
+
+
+def plot_absorbing_markov_chain(mc_object, save_path=None):
+    """
+    Creates and displays a graph of an absorbing Markov chain.
+
+    Parameters:
+    - mc_object: An object representing the Markov chain. Must have methods:
+        - get_states(): Returns a list of all states.
+        - get_absorbing_states(): Returns a list of absorbing states.
+        - get_transitions(): Returns a nested dictionary where the first key is the from_state,
+                             the second key is the to_state, and the value is the transition weight (float).
+        - get_edges(): Returns a dictionary where keys are from_states and values are either a single to_state or a list of to_states.
+
+    Returns:
+    - None: Displays the Markov chain graph.
+    """
+    # Initialize the directed graph
+    G = nx.DiGraph()
+
+    # Add nodes (states)
+    states = mc_object.get_states()
+    absorbing_states = mc_object.get_absorbing_states()
+    G.add_nodes_from(states)
+
+    # Add edges (transitions)
+    edges = mc_object.get_edges()
+    transitions = mc_object.get_transitions()
+
+    for from_state, to_states in edges.items():
+        # Ensure to_states is a list even if it's a single state
+        if isinstance(to_states, str):
+            to_states = [to_states]
+
+        for to_state in to_states:
+            if from_state in transitions and to_state in transitions[from_state]:
+                weight = transitions[from_state][to_state]
+                try:
+                    weight = float(weight)
+                except ValueError:
+                    print(f"Warning: Transition weight for {from_state} -> {to_state} could not be converted to float.")
+                    continue
+                # Add the edge with the float weight
+                G.add_edge(from_state, to_state, weight=weight)
+            else:
+                print(f"Warning: No transition probability for {from_state} -> {to_state}")
+
+    # Ensure that color_map has the same length as the number of nodes
+    color_map = ['red' if state in absorbing_states else 'blue' for state in G.nodes]
+
+    # Set edge labels to be the transition probabilities
+    edge_labels = {(from_state, to_state): f"{G[from_state][to_state]['weight']:.2f}"
+                   for (from_state, to_state) in G.edges()}
+
+    pos = {
+        'object_detection': (0, 0),
+        'move': (0, -20),
+        'pick': (0, -40),
+        'carry': (0, -60),
+        'place': (0, -80),
+        'reset': (0, -100),
+        'done': (0, -120),
+        'object_detection_failure': (6, 0),
+        'move_failure': (6, -20),
+        'pick_failure': (6, -40),
+        'carry_failure': (6, -60),
+        'place_failure': (6, -80),
+        'reset_failure': (6, -100),
+    }
+
+    # Draw the graph with the manually defined positions
+    nx.draw(G, pos, with_labels=True, node_color=color_map, node_size=5000, font_size=12, font_weight='bold',
+            edge_color='gray', arrows=True)
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_color='green', font_size=10)
+
+    if save_path:
+        plt.savefig(save_path, format='png', bbox_inches='tight')
+
+    # Display the graph
+    plt.title('Absorbing Markov Chain')
+    plt.show()
+
 

@@ -77,7 +77,7 @@ def solve_mc(mc_object):
     state_list = mc_object.get_states()
     absorbing_state_list = mc_object.get_absorbing_states()
     transitions = mc_object.get_transitions()
-    number_of_transient_states = len(state_list)-len(absorbing_state_list)
+    number_of_transient_states = len(state_list)
     p_matrix = create_mc_transition_matrix(state_list, absorbing_state_list, transitions)
     q_matrix, r_matrix = create_canonical_form(p_matrix, state_list, absorbing_state_list)
     i_matrix = np.identity(number_of_transient_states)
@@ -97,6 +97,7 @@ def solve_mc(mc_object):
 
 def create_mc_transition_matrix(state_list, absorbing_state_list, transitions):
     """@brieg creates the transition matrix"""
+    state_list.extend(absorbing_state_list)
     if absorbing_state_list:
         print("This is an absorbing Markov chain with " + str(len(absorbing_state_list)) + " absorbing states.")
     else:
@@ -112,6 +113,7 @@ def create_mc_transition_matrix(state_list, absorbing_state_list, transitions):
 
 def create_canonical_form(transition_matrix, state_list, absorbing_state_list):
     """@brief brings the transition matrix into the canonical form for further computations"""
+    state_list.extend(absorbing_state_list)
     absorbing_indices = []
     transient_indices = []
     for state in state_list:
@@ -147,19 +149,19 @@ def hybrid_solver(ft_dict, mc_object, repeat_dict={}):
         for to_state, value in elements.items():
             if value in ft_result_dict:
                 transition_prob = ft_result_dict[value]
-                mc_object.m_set_transitions(from_state, to_state, transition_prob)
+                mc_object.add_single_transition(from_state, to_state, transition_prob)
             elif value == '1':
                 continue
             else:
                 for top_event, prob in ft_result_dict.items():
                     if ("1 - " + top_event) == value:
                         prob = 1 - prob
-                        mc_object.m_set_transitions(from_state, to_state, prob)
+                        mc_object.add_single_transition(from_state, to_state, prob)
                         if repeat_dict:
                             for s, v in repeat_dict.items():
                                 if s == to_state:
                                     prob = prob * v
-                                    mc_object.m_set_transitions(from_state, to_state, prob)
+                                    mc_object.add_single_transition(from_state, to_state, prob)
 
     b_matrix, t_matrix = solve_mc(mc_object)
     return b_matrix, t_matrix

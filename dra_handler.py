@@ -106,13 +106,50 @@ def create_skill_list(skill_objects):
     return skill_list
 
 
+def update_be_probability(robotic_system_obj, skill, component):
+    """@brief updates the basic event probabilities depending on the properties of the components of the robotic system"""
+    properties_dict = {}
+    for c in robotic_system_obj.components:
+        if c.name == component:
+            old_probability = c.get_failure_prob()
+            properties = c.get_properties()
+            properties_dict['torque'] = properties['torque'][skill]
+            properties_dict['velocity'] = properties['velocity'][skill]
+            updated_probability = get_prob_factor(properties_dict) * old_probability
+    return updated_probability
+
+
 def perform_sensitivity_analysis(self, robotic_system):
     """@brief performs sensitivity analysis on the HybridReliabilityModel"""
     for component in robotic_system.components:
         old_prob = component.get_failure_prob()
         component.set_failure_prob(old_prob * 10)
-
     return True
+
+
+def create_fault_trees(robotic_system_obj, hybrid_model_obj):
+    """@brief creates a fault tree for each skill of the robotic system containing the used components"""
+    states = create_skill_list(robotic_system_obj.get_skills())
+    be_dict = {}
+    for state in states:
+        ft_name = state + '_failure'
+        ft_top_event = ft_name.lower()
+        ft_skill = state
+        hybrid_model_obj.add_fault_tree(FaultTree(ft_name, ft_top_event, ft_skill))
+
+    for skill in robotic_system_obj.skills:
+        be_dict[skill.name] = {}
+        active_components = skill.get_components()
+        for component in robotic_system_obj.components:
+            if component.name in active_components:
+                prob = update_be_probability(robotic_system_obj, skill.id, component.name)
+                be_dict[skill.name][component.name] = prob
+
+    for ft in hybrid_model_obj.fault_trees:
+        ft.auto_create_ft(basic_events=be_dict[ft.skill])
+
+    return hybrid_model_obj
+
 
 
 robotic_data = read_json('franka_config.json')
@@ -162,14 +199,36 @@ for skill, properties in classified_properties.items():
 hybrid_model = HybridReliabilityModel('Franka_hybrid')
 mc = MarkovChain('Franka')
 states = create_skill_list(robotic_system.get_skills())
-mc.auto_create_mc(states=states, done_state=True, repeat_info=0)
+mc.auto_create_mc(states=states, done_state=True, repeat_info=1)
 hybrid_model.add_markov_chain(mc)
+hybrid_model = create_fault_trees(robotic_system, hybrid_model)
+""""
 for state in states:
     ft_name = state + '_failure'
     ft_top_event = ft_name.lower()
     ft_skill = state
     hybrid_model.add_fault_tree(FaultTree(ft_name, ft_top_event, ft_skill))
 
+for skill in robotic_system.skills:
+    ft_dict = {}
+    for ft in hybrid_model.fault_trees:
+        if skill.name == ft.skill:
+            be = skill.get_components()
+            for x in robotic_system.components:
+                for b in be:
+                    if x.name == b:
+                        ft_dict[b] = x.get_failure_prob()
+        ft.auto_create_ft(basic_events=ft_dict)
+
+"""
+ft_dict = {}
+for ft in hybrid_model.fault_trees:
+    ft_graph = create_ft_graph(ft)
+    ft_dict[ft.name] = [ft, ft_graph]
+
+system_reliability, absorption_prob, absorption_time = hybrid_model.compute_system_reliability(ft_dict=ft_dict, repeat_dict={'done': 0.1, 'object_detection': 0.9})
+
+plot_absorbing_markov_chain(mc_object=mc, save_path='absorbing_mc.png')
 # Example usage:
 data = {
     'Gripper': 2e-4,
@@ -187,7 +246,7 @@ data = {
     'None': 8.74e-5
 }
 
-create_custom_spider_chart(data, title='System failure probability control policy (A)')
+create_custom_spider_chart(data, title='System failure probability control policy (A)', save_path='spider_chart.png')
 
 
 

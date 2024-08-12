@@ -150,6 +150,10 @@ class Skill:
         self.components.remove(component_name)
         return True
 
+    def get_components(self):
+        """@brief returns the list of components"""
+        return self.components
+
     def add_failure_mode(self, failure_mode):
         """@brief adds a failure mode to the list of failure modes"""
         self.failure_modes.append(failure_mode.name)
