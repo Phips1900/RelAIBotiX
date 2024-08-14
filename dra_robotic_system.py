@@ -34,7 +34,7 @@ class RoboticSystem:
         self.skills.append(skill)
         return True
 
-    def add_system_failure_prob(self, prob):
+    def set_system_failure_prob(self, prob):
         """@brief adds the system failure probability"""
         self.system_failure_prob = prob
         return True

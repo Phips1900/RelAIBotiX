@@ -1,0 +1,343 @@
+{
+    "name": "Franka_Tase",
+    "components": [
+        {
+            "name": "Joint_1",
+            "properties": {
+                "speed": {
+                    "Carry": "medium",
+                    "Place": "medium"
+                },
+                "intensity": {}
+            },
+            "skills": [
+                "Move",
+                "Pick",
+                "Carry",
+                "Place",
+                "Reset"
+            ],
+            "failure_prob": 3.577e-08,
+            "redundancy": 0
+        },
+        {
+            "name": "Joint_2",
+            "properties": {
+                "speed": {
+                    "Move": "medium",
+                    "Pick": "high",
+                    "Carry": "high",
+                    "Place": "high",
+                    "Reset": "high"
+                },
+                "intensity": {
+                    "Move": "medium",
+                    "Pick": "high",
+                    "Carry": "medium",
+                    "Place": "high",
+                    "Reset": "medium"
+                }
+            },
+            "skills": [
+                "Move",
+                "Pick",
+                "Carry",
+                "Place",
+                "Reset"
+            ],
+            "failure_prob": 3.577e-08,
+            "redundancy": 0
+        },
+        {
+            "name": "Joint_3",
+            "properties": {
+                "speed": {
+                    "Carry": "medium",
+                    "Place": "medium"
+                },
+                "intensity": {}
+            },
+            "skills": [
+                "Move",
+                "Pick",
+                "Carry",
+                "Place",
+                "Reset"
+            ],
+            "failure_prob": 3.577e-08,
+            "redundancy": 0
+        },
+        {
+            "name": "Joint_4",
+            "properties": {
+                "speed": {
+                    "Move": "medium",
+                    "Reset": "high"
+                },
+                "intensity": {
+                    "Move": "medium",
+                    "Pick": "high",
+                    "Carry": "medium",
+                    "Place": "high",
+                    "Reset": "medium"
+                }
+            },
+            "skills": [
+                "Move",
+                "Pick",
+                "Carry",
+                "Place",
+                "Reset"
+            ],
+            "failure_prob": 3.577e-08,
+            "redundancy": 0
+        },
+        {
+            "name": "Joint_5",
+            "properties": {
+                "speed": {
+                    "Carry": "high"
+                },
+                "intensity": {}
+            },
+            "skills": [
+                "Move",
+                "Pick",
+                "Carry",
+                "Place",
+                "Reset"
+            ],
+            "failure_prob": 3.577e-08,
+            "redundancy": 0
+        },
+        {
+            "name": "Joint_6",
+            "properties": {
+                "speed": {
+                    "Pick": "high",
+                    "Carry": "high",
+                    "Place": "high"
+                },
+                "intensity": {}
+            },
+            "skills": [
+                "Move",
+                "Pick",
+                "Carry",
+                "Place",
+                "Reset"
+            ],
+            "failure_prob": 3.577e-08,
+            "redundancy": 0
+        },
+        {
+            "name": "Joint_7",
+            "properties": {
+                "speed": {
+                    "Carry": "high"
+                },
+                "intensity": {}
+            },
+            "skills": [
+                "Move",
+                "Pick",
+                "Carry",
+                "Place",
+                "Reset"
+            ],
+            "failure_prob": 3.577e-08,
+            "redundancy": 0
+        },
+        {
+            "name": "Power_Supply",
+            "properties": {},
+            "skills": [
+                "Object_detection",
+                "Move",
+                "Pick",
+                "Carry",
+                "Place",
+                "Reset"
+            ],
+            "failure_prob": 6.674e-08,
+            "redundancy": 0
+        },
+        {
+            "name": "Camera",
+            "properties": {},
+            "skills": [
+                "Object_detection"
+            ],
+            "failure_prob": 1.029e-09,
+            "redundancy": 0
+        },
+        {
+            "name": "Sensors",
+            "properties": {},
+            "skills": [
+                "Move",
+                "Pick",
+                "Carry",
+                "Place",
+                "Reset"
+            ],
+            "failure_prob": 5.917e-08,
+            "redundancy": 0
+        },
+        {
+            "name": "Gripper",
+            "properties": {
+                "speed": {
+                    "Pick": "high",
+                    "Place": "high"
+                },
+                "intensity": {}
+            },
+            "skills": [
+                "Pick",
+                "Carry",
+                "Place"
+            ],
+            "failure_prob": 7.344e-08,
+            "redundancy": 0
+        },
+        {
+            "name": "Controller",
+            "properties": {},
+            "skills": [
+                "Object_detection",
+                "Move",
+                "Pick",
+                "Carry",
+                "Place",
+                "Reset"
+            ],
+            "failure_prob": 2.167e-10,
+            "redundancy": 0
+        }
+    ],
+    "failure_modes": [
+        {
+            "name": "Drop",
+            "failure_sequence": {},
+            "likelihood": {},
+            "severity": "low"
+        },
+        {
+            "name": "crack",
+            "failure_sequence": {},
+            "likelihood": {},
+            "severity": "low"
+        }
+    ],
+    "skills": [
+        {
+            "name": "Object_detection",
+            "components": [
+                "Camera",
+                "Controller",
+                "Power_Supply"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 6.7985699916639e-08
+        },
+        {
+            "name": "Move",
+            "components": [
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7",
+                "Power_Supply",
+                "Controller",
+                "Sensors"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 9.48836360669857e-07
+        },
+        {
+            "name": "Pick",
+            "components": [
+                "Gripper",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7",
+                "Power_Supply",
+                "Controller",
+                "Sensors"
+            ],
+            "failure_modes": [
+                "Drop",
+                "crack"
+            ],
+            "skill_failure_prob": 2.1444448919977557e-06
+        },
+        {
+            "name": "Carry",
+            "components": [
+                "Gripper",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7",
+                "Power_Supply",
+                "Controller",
+                "Sensors"
+            ],
+            "failure_modes": [
+                "Drop",
+                "crack"
+            ],
+            "skill_failure_prob": 1.9880649978846387e-06
+        },
+        {
+            "name": "Place",
+            "components": [
+                "Gripper",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7",
+                "Power_Supply",
+                "Controller",
+                "Sensors"
+            ],
+            "failure_modes": [
+                "Drop",
+                "crack"
+            ],
+            "skill_failure_prob": 2.3590644279185223e-06
+        },
+        {
+            "name": "Reset",
+            "components": [
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7",
+                "Power_Supply",
+                "Controller",
+                "Sensors"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 1.2349961608023946e-06
+        }
+    ],
+    "system_failure_prob": 8.735876649517968e-05
+}

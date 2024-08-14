@@ -77,7 +77,7 @@ class BehavioralAnalysis:
     def analyze_active_components(self):
         component_columns = get_columns(self.robot_type)['components']
         time_series = self.time_series[:, component_columns]
-        threshold = 0.001
+        threshold = 0.0001
         for skill, time_points in self.skill_data_points.items():
             self.active_components[skill] = []
             start_value = time_points['start']
@@ -147,7 +147,7 @@ def get_columns(robot_type):
     robot_column_mapping = {
         'Manipulator': {
             'components': [0, 1, 2, 10, 11, 12, 13, 14, 15, 16],
-            'properties': [18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+            'properties': [18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35],
             'skills': [17]
         },
         'Mobile Robot': {

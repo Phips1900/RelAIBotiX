@@ -10,21 +10,23 @@ import matplotlib.pyplot as plt
 
 def load_data(file_path):
     data = np.load(file_path)
-    return data
+    shaped_date = data[0, 2:2980, :]
+    return shaped_date
 
 
 def get_skill_str(skill_id):
     # Function to get the skill string
     # Define the lookup table
     skill_lookup = {
-        1: 'move',
-        2: 'pick',
-        3: 'carry',
-        4: 'place',
-        5: 'object_detection',
-        6: 'reset',
+        1: 'object_detection',
+        2: 'move',
+        3: 'pick',
+        4: 'carry',
+        5: 'place',
+        6: 'shake',
         7: 'pour',
-        8: 'shake',
+        8: 'rotate',
+        9: 'reset',
     }
     return skill_lookup.get(skill_id, 'Unknown skill')
 
@@ -63,6 +65,33 @@ def get_component_property_link(component_name):
     return component_lookup.get(component_name, 'Unknown_component')
 
 
+def add_skills(skills, robotic_system):
+    for skill in skills:
+        robotic_system.add_skill(Skill(name=get_skill_str(skill), id=skill))
+
+
+def add_properties(classified_properties, robotic_system):
+    for skill, properties in classified_properties.items():
+        for c in robotic_system.components:
+            for property_key, property_value in properties.items():
+                index = get_component_property_link(c.name)
+                if index != 'Unknown_component':
+                    c.add_property(property_name=property_key, value=property_value[index], skill=skill)
+                else:
+                    c.add_property(property_name=property_key, value='low', skill=skill)
+
+
+def add_components_to_skill(robotic_system, active_components):
+    for skill, a_c in active_components.items():
+        for s in robotic_system.skills:
+            if s.id == skill:
+                s.add_component('Power_Supply')
+                s.add_component('Controller')
+                s.add_component('Sensors')
+                for c in a_c:
+                    s.add_component(get_component_str(c))
+
+
 def classify_property_dict(property_dict):
     """
     Classifies properties based on their type and values provided in a dictionary for each skill.
@@ -80,7 +109,7 @@ def classify_property_dict(property_dict):
                         classifications[skill][property_type].append('low')
                     elif 0.3 <= abs_value < 0.7:
                         classifications[skill][property_type].append('medium')
-                    elif 0.7 <= abs_value <= 1.55:
+                    elif 0.7 <= abs_value <= 2.01:
                         classifications[skill][property_type].append('high')
                     else:
                         classifications[skill][property_type].append(abs_value)
@@ -104,6 +133,14 @@ def create_skill_list(skill_objects):
     for skill in skill_objects:
         skill_list.append(skill.name)
     return skill_list
+
+
+def create_ft_dict(hybrid_model):
+    ft_dict = {}
+    for ft in hybrid_model.fault_trees:
+        ft_graph = create_ft_graph(ft)
+        ft_dict[ft.name] = [ft, ft_graph]
+    return ft_dict
 
 
 def update_be_probability(robotic_system_obj, skill, component):
@@ -151,6 +188,14 @@ def create_fault_trees(robotic_system_obj, hybrid_model_obj):
     return hybrid_model_obj
 
 
+def add_skill_failure_prob(hybrid_model, robotic_system):
+    """@brief sets the skill failure probabilities for the Markov Chain"""
+    for skill in robotic_system.skills:
+        for ft in hybrid_model.fault_trees:
+            if skill.name == ft.skill:
+                skill.set_skill_failure_prob(ft.get_top_event_failure_prob())
+    return True
+
 
 robotic_data = read_json('franka_config.json')
 component_names = robotic_data['components']
@@ -166,70 +211,34 @@ for component, reliability_data in component_names.items():
 print(robotic_system.get_name())
 
 
-robot_data = load_data('pick_place_data.npy')
+robot_data = load_data('pick_place_philipp.npy')
 behavioral_profile = BehavioralAnalysis(name=robotic_system.get_name(), time_series=robot_data, robot_type=robotic_system.get_robot_type())
 behavioral_profile.detect_skill_sequence()
 skills = behavioral_profile.get_skill_sequence()
-for skill in skills:
-    robotic_system.add_skill(Skill(name=get_skill_str(skill), id=skill))
+add_skills(skills, robotic_system)
 behavioral_profile.analyze_active_components()
 active_components = behavioral_profile.get_active_components()
-for skill, a_c in active_components.items():
-    for s in robotic_system.skills:
-        if s.id == skill:
-            s.add_component('Power_Supply')
-            s.add_component('Controller')
-            s.add_component('Sensors')
-            for c in a_c:
-                s.add_component(get_component_str(c))
+add_components_to_skill(robotic_system, active_components)
 behavioral_profile.extract_properties()
 extracted_properties = behavioral_profile.get_extracted_properties()
 classified_properties = classify_property_dict(extracted_properties)
-for skill, properties in classified_properties.items():
-    for c in robotic_system.components:
-        for property_key, property_value in properties.items():
-            index = get_component_property_link(c.name)
-            if index != 'Unknown_component':
-                if property_key == 'torque' and index == 7:
-                    c.add_property(property_name=property_key, value='low', skill=skill)
-                else:
-                    c.add_property(property_name=property_key, value=property_value[index], skill=skill)
-            else:
-                c.add_property(property_name=property_key, value='low', skill=skill)
+add_properties(classified_properties, robotic_system)
 hybrid_model = HybridReliabilityModel('Franka_hybrid')
 mc = MarkovChain('Franka')
 states = create_skill_list(robotic_system.get_skills())
 mc.auto_create_mc(states=states, done_state=True, repeat_info=1)
 hybrid_model.add_markov_chain(mc)
 hybrid_model = create_fault_trees(robotic_system, hybrid_model)
-""""
-for state in states:
-    ft_name = state + '_failure'
-    ft_top_event = ft_name.lower()
-    ft_skill = state
-    hybrid_model.add_fault_tree(FaultTree(ft_name, ft_top_event, ft_skill))
 
-for skill in robotic_system.skills:
-    ft_dict = {}
-    for ft in hybrid_model.fault_trees:
-        if skill.name == ft.skill:
-            be = skill.get_components()
-            for x in robotic_system.components:
-                for b in be:
-                    if x.name == b:
-                        ft_dict[b] = x.get_failure_prob()
-        ft.auto_create_ft(basic_events=ft_dict)
-
-"""
-ft_dict = {}
-for ft in hybrid_model.fault_trees:
-    ft_graph = create_ft_graph(ft)
-    ft_dict[ft.name] = [ft, ft_graph]
+ft_dict = create_ft_dict(hybrid_model)
 
 system_reliability, absorption_prob, absorption_time = hybrid_model.compute_system_reliability(ft_dict=ft_dict, repeat_dict={'done': 0.1, 'object_detection': 0.9})
-
+robotic_system.set_system_failure_prob(system_reliability)
+add_skill_failure_prob(hybrid_model, robotic_system)
+write_json(robotic_system, 'robotic_system.json')
 plot_absorbing_markov_chain(mc_object=mc, save_path='absorbing_mc.png')
 # Example usage:
+
 data = {
     'Gripper': 2e-4,
     'Joint_1': 1.23e-4,
