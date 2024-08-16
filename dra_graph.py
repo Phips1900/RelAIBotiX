@@ -115,84 +115,84 @@ def create_custom_spider_chart(data_dict, title='Spider Diagram', save_path=None
     plt.show()
 
 
-def plot_absorbing_markov_chain(mc_object, save_path=None):
+def create_custom_mc_graph(states, absorbing_states, transitions, output_file=None):
     """
-    Creates and displays a graph of an absorbing Markov chain.
+    Creates a custom Markov Chain graph including transitions between all states.
 
     Parameters:
-    - mc_object: An object representing the Markov chain. Must have methods:
-        - get_states(): Returns a list of all states.
-        - get_absorbing_states(): Returns a list of absorbing states.
-        - get_transitions(): Returns a nested dictionary where the first key is the from_state,
-                             the second key is the to_state, and the value is the transition weight (float).
-        - get_edges(): Returns a dictionary where keys are from_states and values are either a single to_state or a list of to_states.
+    - states (list): List of all states.
+    - absorbing_states (list): List of absorbing states.
+    - transitions (dict): Nested dictionary where the first key is the from_state,
+                          the second key is the to_state, and the value is the transition probability (float).
+    - output_file (str): Optional. If provided, saves the graph as an image file with the given name.
 
     Returns:
-    - None: Displays the Markov chain graph.
+    - None: Displays or saves the Markov Chain graph.
     """
     # Initialize the directed graph
     G = nx.DiGraph()
 
-    # Add nodes (states)
-    states = mc_object.get_states()
-    absorbing_states = mc_object.get_absorbing_states()
-    G.add_nodes_from(states)
+    # Add nodes
+    G.add_nodes_from(states + absorbing_states)
 
-    # Add edges (transitions)
-    edges = mc_object.get_edges()
-    transitions = mc_object.get_transitions()
+    # Add edges with transition probabilities
+    for from_state, to_transitions in transitions.items():
+        for to_state, probability in to_transitions.items():
+            G.add_edge(from_state, to_state, weight=probability)
 
-    for from_state, to_states in edges.items():
-        # Ensure to_states is a list even if it's a single state
-        if isinstance(to_states, str):
-            to_states = [to_states]
+    # Define manual positions for a left-right layout
+    pos = {}
+    y_offset = 0
+    for i, state in enumerate(states):
+        pos[state] = (0, y_offset)
+        y_offset -= 2  # Increase vertical spacing
 
-        for to_state in to_states:
-            if from_state in transitions and to_state in transitions[from_state]:
-                weight = transitions[from_state][to_state]
-                try:
-                    weight = float(weight)
-                except ValueError:
-                    print(f"Warning: Transition weight for {from_state} -> {to_state} could not be converted to float.")
-                    continue
-                # Add the edge with the float weight
-                G.add_edge(from_state, to_state, weight=weight)
-            else:
-                print(f"Warning: No transition probability for {from_state} -> {to_state}")
+    y_offset = 0
+    for i, state in enumerate(absorbing_states):
+        pos[state] = (4, y_offset)
+        y_offset -= 2  # Increase vertical spacing
 
-    # Ensure that color_map has the same length as the number of nodes
-    color_map = ['red' if state in absorbing_states else 'blue' for state in G.nodes]
+    # Draw the graph
+    plt.figure(figsize=(10, len(states) * 1.5))
+    nx.draw(
+        G, pos, with_labels=True,
+        node_color=['white' if state not in absorbing_states else 'red' for state in G.nodes()],
+        node_size=5000, font_size=14, font_weight='bold', edge_color='green', arrows=True, width=2, edgecolors='black'
+    )
 
-    # Set edge labels to be the transition probabilities
+    # Draw edge labels
     edge_labels = {(from_state, to_state): f"{G[from_state][to_state]['weight']:.2f}"
-                   for (from_state, to_state) in G.edges()}
+                   for from_state, to_state in G.edges()}
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_color='black', font_size=14, label_pos=0.5)
 
-    pos = {
-        'object_detection': (0, 0),
-        'move': (0, -20),
-        'pick': (0, -40),
-        'carry': (0, -60),
-        'place': (0, -80),
-        'reset': (0, -100),
-        'done': (0, -120),
-        'object_detection_failure': (6, 0),
-        'move_failure': (6, -20),
-        'pick_failure': (6, -40),
-        'carry_failure': (6, -60),
-        'place_failure': (6, -80),
-        'reset_failure': (6, -100),
-    }
+    # Remove axis
+    plt.axis('off')
 
-    # Draw the graph with the manually defined positions
-    nx.draw(G, pos, with_labels=True, node_color=color_map, node_size=5000, font_size=12, font_weight='bold',
-            edge_color='gray', arrows=True)
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_color='green', font_size=10)
+    # Save the plot to a file if specified
+    if output_file:
+        plt.savefig(output_file, format='png', bbox_inches='tight')
 
-    if save_path:
-        plt.savefig(save_path, format='png', bbox_inches='tight')
-
-    # Display the graph
-    plt.title('Absorbing Markov Chain')
+    # Show the plot
     plt.show()
+
+
+# Example usage:
+states = ["object_detection", "move", "pick", "carry", "place", "reset", "done"]
+absorbing_states = ["object_detection_failure", "move_failure", "pick_failure", "carry_failure", "place_failure",
+                    "reset_failure"]
+
+# Define all transitions, including those between transient states
+transitions = {
+    "object_detection": {"move": 0.8, "object_detection_failure": 0.2},
+    "move": {"pick": 0.7, "move_failure": 0.3},
+    "pick": {"carry": 0.6, "pick_failure": 0.4},
+    "carry": {"place": 0.5, "carry_failure": 0.5},
+    "place": {"reset": 0.9, "place_failure": 0.1},
+    "reset": {"done": 0.8, "reset_failure": 0.2},
+}
+
+create_custom_mc_graph(states, absorbing_states, transitions)
+
+print(states)
 
 

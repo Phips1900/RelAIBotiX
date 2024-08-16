@@ -1,0 +1,410 @@
+{
+    "name": "Franka Emika Panda",
+    "type": "Manipulator",
+    "components": [
+        {
+            "name": "Joint_1",
+            "properties": {
+                "velocity": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                },
+                "torque": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                }
+            },
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_2",
+            "properties": {
+                "velocity": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "high",
+                    "4": "medium",
+                    "5": "high",
+                    "9": "high"
+                },
+                "torque": {
+                    "1": "medium",
+                    "2": "medium",
+                    "3": "high",
+                    "4": "medium",
+                    "5": "high",
+                    "9": "high"
+                }
+            },
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_3",
+            "properties": {
+                "velocity": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                },
+                "torque": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                }
+            },
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_4",
+            "properties": {
+                "velocity": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "high",
+                    "4": "medium",
+                    "5": "high",
+                    "9": "medium"
+                },
+                "torque": {
+                    "1": "medium",
+                    "2": "medium",
+                    "3": "medium",
+                    "4": "medium",
+                    "5": "medium",
+                    "9": "medium"
+                }
+            },
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_5",
+            "properties": {
+                "velocity": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                },
+                "torque": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                }
+            },
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_6",
+            "properties": {
+                "velocity": {
+                    "1": "medium",
+                    "2": "low",
+                    "3": "high",
+                    "4": "low",
+                    "5": "high",
+                    "9": "high"
+                },
+                "torque": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                }
+            },
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_7",
+            "properties": {
+                "velocity": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                },
+                "torque": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                }
+            },
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Controller",
+            "properties": {
+                "velocity": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                },
+                "torque": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                }
+            },
+            "skills": [],
+            "failure_prob": 2.167e-10,
+            "redundancy": true
+        },
+        {
+            "name": "Power_Supply",
+            "properties": {
+                "velocity": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                },
+                "torque": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                }
+            },
+            "skills": [],
+            "failure_prob": 6.674e-08,
+            "redundancy": true
+        },
+        {
+            "name": "Gripper",
+            "properties": {
+                "velocity": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                },
+                "torque": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                }
+            },
+            "skills": [],
+            "failure_prob": 7.344e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Camera",
+            "properties": {
+                "velocity": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                },
+                "torque": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                }
+            },
+            "skills": [],
+            "failure_prob": 1.029e-09,
+            "redundancy": false
+        },
+        {
+            "name": "Sensors",
+            "properties": {
+                "velocity": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                },
+                "torque": {
+                    "1": "low",
+                    "2": "low",
+                    "3": "low",
+                    "4": "low",
+                    "5": "low",
+                    "9": "low"
+                }
+            },
+            "skills": [],
+            "failure_prob": 5.917e-08,
+            "redundancy": false
+        }
+    ],
+    "skills": [
+        {
+            "name": "object_detection",
+            "id": 1,
+            "components": [
+                "Power_Supply",
+                "Controller",
+                "Sensors",
+                "Camera",
+                "Gripper",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 8.444553949045269e-07
+        },
+        {
+            "name": "move",
+            "id": 2,
+            "components": [
+                "Power_Supply",
+                "Controller",
+                "Sensors",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_6",
+                "Joint_7"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 6.269065420180058e-07
+        },
+        {
+            "name": "pick",
+            "id": 3,
+            "components": [
+                "Power_Supply",
+                "Controller",
+                "Sensors",
+                "Gripper",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 1.7376755558123703e-06
+        },
+        {
+            "name": "carry",
+            "id": 4,
+            "components": [
+                "Power_Supply",
+                "Controller",
+                "Sensors",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 9.48836360669857e-07
+        },
+        {
+            "name": "place",
+            "id": 5,
+            "components": [
+                "Power_Supply",
+                "Controller",
+                "Sensors",
+                "Gripper",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 1.7376755558123703e-06
+        },
+        {
+            "name": "reset",
+            "id": 9,
+            "components": [
+                "Power_Supply",
+                "Controller",
+                "Sensors",
+                "Gripper",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 1.594595737905443e-06
+        }
+    ],
+    "system_failure_prob": 7.405178220595124e-05,
+    "failure_modes": []
+}

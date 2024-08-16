@@ -6,6 +6,7 @@ from dra_solver import *
 from dra_behavioral_analysis import *
 import numpy as np
 import matplotlib.pyplot as plt
+from dra_pdf import *
 
 
 def load_data(file_path):
@@ -156,14 +157,6 @@ def update_be_probability(robotic_system_obj, skill, component):
     return updated_probability
 
 
-def perform_sensitivity_analysis(self, robotic_system):
-    """@brief performs sensitivity analysis on the HybridReliabilityModel"""
-    for component in robotic_system.components:
-        old_prob = component.get_failure_prob()
-        component.set_failure_prob(old_prob * 10)
-    return True
-
-
 def create_fault_trees(robotic_system_obj, hybrid_model_obj):
     """@brief creates a fault tree for each skill of the robotic system containing the used components"""
     states = create_skill_list(robotic_system_obj.get_skills())
@@ -195,6 +188,25 @@ def add_skill_failure_prob(hybrid_model, robotic_system):
             if skill.name == ft.skill:
                 skill.set_skill_failure_prob(ft.get_top_event_failure_prob())
     return True
+
+
+def perform_sensitivity_analysis(hybrid_model, robotic_system, sensitivity_analysis_data):
+    for component in robotic_system.components:
+        new_states = create_skill_list(robotic_system.get_skills())
+        hybrid_model_new = HybridReliabilityModel(component.name)
+        mc_new = MarkovChain(component.name)
+        mc_new.auto_create_mc(states=new_states, done_state=True, repeat_info=1)
+        hybrid_model_new.add_markov_chain(mc_new)
+        hybrid_model_new = create_fault_trees(robotic_system, hybrid_model_new)
+        for ft in hybrid_model_new.fault_trees:
+            if component.name in ft.basic_events:
+                old_prob = ft.basic_events[component.name]
+                new_prob = old_prob * 10.0
+                ft.basic_events[component.name] = new_prob
+        new_fts = create_ft_dict(hybrid_model_new)
+        new_system_reliability, new_absorption_prob, new_absorption_time = hybrid_model_new.compute_system_reliability(ft_dict=new_fts, repeat_dict={'done': 0.1, 'object_detection': 0.9})
+        sensitivity_analysis_data[component.name] = new_system_reliability
+    return sensitivity_analysis_data
 
 
 robotic_data = read_json('franka_config.json')
@@ -233,29 +245,19 @@ hybrid_model = create_fault_trees(robotic_system, hybrid_model)
 ft_dict = create_ft_dict(hybrid_model)
 
 system_reliability, absorption_prob, absorption_time = hybrid_model.compute_system_reliability(ft_dict=ft_dict, repeat_dict={'done': 0.1, 'object_detection': 0.9})
-robotic_system.set_system_failure_prob(system_reliability)
+robotic_system.set_system_failure_prob(float(system_reliability))
 add_skill_failure_prob(hybrid_model, robotic_system)
 write_json(robotic_system, 'robotic_system.json')
-plot_absorbing_markov_chain(mc_object=mc, save_path='absorbing_mc.png')
-# Example usage:
 
-data = {
-    'Gripper': 2e-4,
-    'Joint_1': 1.23e-4,
-    'Joint_2': 3.16e-4,
-    'Joint_3': 1.23e-4,
-    'Joint_4': 2.39e-4,
-    'Joint_5': 1.26e-4,
-    'Joint_6': 1.71e-4,
-    'Joint_7': 1.26e-4,
-    'Camera': 8.74e-5,
-    'Sensors': 1.14e-4,
-    'Controller': 8.75e-5,
-    'Power_supply': 1.23e-4,
-    'None': 8.74e-5
-}
+sensitivity_analysis_data = {'None': system_reliability}
+sensitivity_analysis_data = perform_sensitivity_analysis(hybrid_model, robotic_system, sensitivity_analysis_data)
+create_custom_spider_chart(sensitivity_analysis_data, title='System failure probability', save_path='spider_chart.png')
+json_file = 'robotic_system.json'
+plot_files = ['spider_chart.png']
 
-create_custom_spider_chart(data, title='System failure probability control policy (A)', save_path='spider_chart.png')
+create_pdf_from_json_and_plots(json_file, plot_files, filename='robot_report.pdf')
+
+
 
 
 
