@@ -224,6 +224,7 @@ print(robotic_system.get_name())
 
 
 robot_data = load_data('pick_place_philipp.npy')
+plot_data(robot_data, save_path='robot_data.png')
 behavioral_profile = BehavioralAnalysis(name=robotic_system.get_name(), time_series=robot_data, robot_type=robotic_system.get_robot_type())
 behavioral_profile.detect_skill_sequence()
 skills = behavioral_profile.get_skill_sequence()

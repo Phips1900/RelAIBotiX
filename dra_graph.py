@@ -47,6 +47,23 @@ def draw_graph(graph):
     plt.show()
 
 
+def plot_data(data, save_path=None):
+    """@brief plots data"""
+    plt.plot(data[:, 3], label="x")
+    plt.plot(data[:, 4], label="y")
+    plt.plot(data[:, 5], label="z")
+    plt.plot(data[:, 19], label="Joint_2_velocity")
+    plt.plot(data[:, 28] / 10, label="Joint_2_torque")
+    plt.plot(data[:, 0], label="camera")
+    plt.plot(data[:, 1], label="gripper")
+    plt.plot(data[:, 25], label="gripper_velocity")
+    # plt.plot(data[:, 17] / 10, label="label")
+    plt.legend()
+    if save_path:
+        plt.savefig(save_path)
+    plt.show()
+
+
 def create_custom_spider_chart(data_dict, title='Spider Diagram', save_path=None):
     """
     Creates a custom spider (radar) diagram based on a dictionary of components and their associated probabilities.

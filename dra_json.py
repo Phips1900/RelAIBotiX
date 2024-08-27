@@ -15,3 +15,4 @@ def read_json(file):
     with open(file, 'r') as infile:
         data = json.load(infile)
     return data
+
