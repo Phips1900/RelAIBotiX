@@ -8,16 +8,18 @@
                 "velocity": {
                     "1": "low",
                     "2": "low",
-                    "3": "low",
-                    "4": "low",
-                    "5": "low",
-                    "9": "low"
+                    "3": "medium",
+                    "4": "medium",
+                    "7": "medium",
+                    "5": "medium",
+                    "9": "high"
                 },
                 "torque": {
                     "1": "low",
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 }
@@ -33,7 +35,8 @@
                     "1": "low",
                     "2": "low",
                     "3": "high",
-                    "4": "medium",
+                    "4": "low",
+                    "7": "medium",
                     "5": "high",
                     "9": "high"
                 },
@@ -41,7 +44,8 @@
                     "1": "medium",
                     "2": "medium",
                     "3": "high",
-                    "4": "medium",
+                    "4": "high",
+                    "7": "medium",
                     "5": "high",
                     "9": "high"
                 }
@@ -56,18 +60,20 @@
                 "velocity": {
                     "1": "low",
                     "2": "low",
-                    "3": "low",
+                    "3": "high",
                     "4": "low",
-                    "5": "low",
-                    "9": "low"
+                    "7": "medium",
+                    "5": "high",
+                    "9": "medium"
                 },
                 "torque": {
                     "1": "low",
                     "2": "low",
-                    "3": "low",
-                    "4": "low",
-                    "5": "low",
-                    "9": "low"
+                    "3": "medium",
+                    "4": "medium",
+                    "7": "medium",
+                    "5": "medium",
+                    "9": "medium"
                 }
             },
             "skills": [],
@@ -80,9 +86,10 @@
                 "velocity": {
                     "1": "low",
                     "2": "low",
-                    "3": "high",
-                    "4": "medium",
-                    "5": "high",
+                    "3": "medium",
+                    "4": "low",
+                    "7": "low",
+                    "5": "medium",
                     "9": "medium"
                 },
                 "torque": {
@@ -90,6 +97,7 @@
                     "2": "medium",
                     "3": "medium",
                     "4": "medium",
+                    "7": "medium",
                     "5": "medium",
                     "9": "medium"
                 }
@@ -104,16 +112,18 @@
                 "velocity": {
                     "1": "low",
                     "2": "low",
-                    "3": "low",
+                    "3": "high",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
-                    "9": "low"
+                    "9": "medium"
                 },
                 "torque": {
                     "1": "low",
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 }
@@ -126,18 +136,20 @@
             "name": "Joint_6",
             "properties": {
                 "velocity": {
-                    "1": "medium",
+                    "1": "low",
                     "2": "low",
                     "3": "high",
                     "4": "low",
-                    "5": "high",
-                    "9": "high"
+                    "7": "medium",
+                    "5": "low",
+                    "9": "medium"
                 },
                 "torque": {
                     "1": "low",
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 }
@@ -152,16 +164,18 @@
                 "velocity": {
                     "1": "low",
                     "2": "low",
-                    "3": "low",
+                    "3": "high",
                     "4": "low",
-                    "5": "low",
-                    "9": "low"
+                    "7": "low",
+                    "5": "high",
+                    "9": "medium"
                 },
                 "torque": {
                     "1": "low",
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 }
@@ -178,6 +192,7 @@
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 },
@@ -186,6 +201,7 @@
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 }
@@ -202,6 +218,7 @@
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 },
@@ -210,6 +227,7 @@
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 }
@@ -226,6 +244,7 @@
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 },
@@ -234,6 +253,7 @@
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 }
@@ -250,6 +270,7 @@
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 },
@@ -258,6 +279,7 @@
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 }
@@ -274,6 +296,7 @@
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 },
@@ -282,6 +305,7 @@
                     "2": "low",
                     "3": "low",
                     "4": "low",
+                    "7": "low",
                     "5": "low",
                     "9": "low"
                 }
@@ -300,7 +324,6 @@
                 "Controller",
                 "Sensors",
                 "Camera",
-                "Gripper",
                 "Joint_1",
                 "Joint_2",
                 "Joint_3",
@@ -310,7 +333,7 @@
                 "Joint_7"
             ],
             "failure_modes": [],
-            "skill_failure_prob": 8.444553949045269e-07
+            "skill_failure_prob": 6.637055189116646e-07
         },
         {
             "name": "move",
@@ -323,11 +346,12 @@
                 "Joint_2",
                 "Joint_3",
                 "Joint_4",
+                "Joint_5",
                 "Joint_6",
                 "Joint_7"
             ],
             "failure_modes": [],
-            "skill_failure_prob": 6.269065420180058e-07
+            "skill_failure_prob": 6.626765195935587e-07
         },
         {
             "name": "pick",
@@ -346,7 +370,7 @@
                 "Joint_7"
             ],
             "failure_modes": [],
-            "skill_failure_prob": 1.7376755558123703e-06
+            "skill_failure_prob": 2.631923743438908e-06
         },
         {
             "name": "carry",
@@ -355,6 +379,7 @@
                 "Power_Supply",
                 "Controller",
                 "Sensors",
+                "Gripper",
                 "Joint_1",
                 "Joint_2",
                 "Joint_3",
@@ -364,7 +389,26 @@
                 "Joint_7"
             ],
             "failure_modes": [],
-            "skill_failure_prob": 9.48836360669857e-07
+            "skill_failure_prob": 1.1653561357635796e-06
+        },
+        {
+            "name": "pour",
+            "id": 7,
+            "components": [
+                "Power_Supply",
+                "Controller",
+                "Sensors",
+                "Gripper",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 1.379975895890778e-06
         },
         {
             "name": "place",
@@ -383,7 +427,7 @@
                 "Joint_7"
             ],
             "failure_modes": [],
-            "skill_failure_prob": 1.7376755558123703e-06
+            "skill_failure_prob": 2.131144855455789e-06
         },
         {
             "name": "reset",
@@ -402,9 +446,9 @@
                 "Joint_7"
             ],
             "failure_modes": [],
-            "skill_failure_prob": 1.594595737905443e-06
+            "skill_failure_prob": 2.202684663329473e-06
         }
     ],
-    "system_failure_prob": 7.405178220595124e-05,
+    "system_failure_prob": 0.000108363618947447,
     "failure_modes": []
 }

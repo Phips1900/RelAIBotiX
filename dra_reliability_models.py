@@ -66,7 +66,13 @@ class HybridReliabilityModel:
     def compute_system_reliability(self, ft_dict, repeat_dict={}):
         """@brief computes the system reliability of the HybridReliabilityModel"""
         absorption_prob, absorption_time = hybrid_solver(ft_dict=ft_dict, mc_object=self.markov_chain, repeat_dict=repeat_dict)
-        absorption_prob = absorption_prob[1, 0:6]
+        num_cols = absorption_prob.shape[1]
+        num_cols = num_cols - 1
+        '''
+        test = absorption_prob[0, num_cols]
+        test = 1 - test
+        '''
+        absorption_prob = absorption_prob[0, 0:num_cols]
         system_reliability = absorption_prob.sum()
         return system_reliability, absorption_prob, absorption_time
 

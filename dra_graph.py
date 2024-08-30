@@ -47,7 +47,7 @@ def draw_graph(graph):
     plt.show()
 
 
-def plot_data(data, save_path=None):
+def plot_data_franka(data, save_path=None):
     """@brief plots data"""
     plt.plot(data[:, 3], label="x")
     plt.plot(data[:, 4], label="y")
@@ -58,6 +58,26 @@ def plot_data(data, save_path=None):
     plt.plot(data[:, 1], label="gripper")
     plt.plot(data[:, 25], label="gripper_velocity")
     # plt.plot(data[:, 17] / 10, label="label")
+    plt.legend()
+    if save_path:
+        plt.savefig(save_path)
+    plt.show()
+
+
+def plot_data_ur5(data, save_path=None):
+    """@brief plots data"""
+    plt.plot(data[:, 6], label="x")
+    plt.plot(data[:, 7], label="y")
+    plt.plot(data[:, 8], label="z")
+    plt.plot(data[:, 13], label="gripper_closed")
+
+    plt.plot(data[:, 0], label="position_joint_1")
+    plt.plot(data[:, 1], label="position_joint_2")
+    plt.plot(data[:, 2], label="position_joint_3")
+    plt.plot(data[:, 3], label="position_joint_4")
+    plt.plot(data[:, 4], label="position_joint_5")
+    plt.plot(data[:, 5], label="position_joint_6")
+
     plt.legend()
     if save_path:
         plt.savefig(save_path)
@@ -162,12 +182,12 @@ def create_custom_mc_graph(states, absorbing_states, transitions, output_file=No
     y_offset = 0
     for i, state in enumerate(states):
         pos[state] = (0, y_offset)
-        y_offset -= 2  # Increase vertical spacing
+        y_offset -= 15  # Increase vertical spacing
 
     y_offset = 0
     for i, state in enumerate(absorbing_states):
         pos[state] = (4, y_offset)
-        y_offset -= 2  # Increase vertical spacing
+        y_offset -= 15  # Increase vertical spacing
 
     # Draw the graph
     plt.figure(figsize=(10, len(states) * 1.5))

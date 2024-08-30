@@ -1,0 +1,38 @@
+{
+  "robot": "UR5",
+  "robot_type": "Manipulator",
+  "components": {
+    "Joint_1": {
+      "failure_probability": 8.33e-07,
+      "redundancy": false
+    },
+    "Joint_2": {
+      "failure_probability": 8.33e-07,
+      "redundancy": false
+    },
+    "Joint_3": {
+      "failure_probability": 8.33e-07,
+      "redundancy": false
+    },
+    "Joint_4": {
+      "failure_probability": 8.33e-07,
+      "redundancy": false
+    },
+    "Controller": {
+      "failure_probability": 2.167e-10,
+      "redundancy": true
+    },
+    "Battery": {
+      "failure_probability": 5.674e-07,
+      "redundancy": true
+    },
+    "Gripper": {
+      "failure_probability": 1.50e-07,
+      "redundancy": false
+    },
+    "Sensors": {
+      "failure_probability": 5.917e-08,
+      "redundancy": false
+    }
+  }
+}

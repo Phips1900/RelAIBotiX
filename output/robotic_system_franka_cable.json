@@ -1,0 +1,152 @@
+{
+    "name": "Franka Emika Cable",
+    "type": "Manipulator",
+    "components": [
+        {
+            "name": "Joint_1",
+            "properties": {},
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_2",
+            "properties": {},
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_3",
+            "properties": {},
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_4",
+            "properties": {},
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_5",
+            "properties": {},
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_6",
+            "properties": {},
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Joint_7",
+            "properties": {},
+            "skills": [],
+            "failure_prob": 3.577e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Controller",
+            "properties": {},
+            "skills": [],
+            "failure_prob": 2.167e-10,
+            "redundancy": true
+        },
+        {
+            "name": "Power_Supply",
+            "properties": {},
+            "skills": [],
+            "failure_prob": 6.674e-08,
+            "redundancy": true
+        },
+        {
+            "name": "Gripper",
+            "properties": {},
+            "skills": [],
+            "failure_prob": 7.344e-08,
+            "redundancy": false
+        },
+        {
+            "name": "Sensors",
+            "properties": {},
+            "skills": [],
+            "failure_prob": 5.917e-08,
+            "redundancy": false
+        }
+    ],
+    "skills": [
+        {
+            "name": "pick",
+            "id": 0,
+            "components": [
+                "Power_Supply",
+                "Controller",
+                "Sensors"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 1.2612669602370952e-07
+        },
+        {
+            "name": "route",
+            "id": 1,
+            "components": [
+                "Power_Supply",
+                "Controller",
+                "Sensors",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 3.7651663757350024e-07
+        },
+        {
+            "name": "perturb",
+            "id": 2,
+            "components": [
+                "Power_Supply",
+                "Controller",
+                "Sensors",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 3.7651663757350024e-07
+        },
+        {
+            "name": "next",
+            "id": 3,
+            "components": [
+                "Power_Supply",
+                "Controller",
+                "Sensors",
+                "Joint_1",
+                "Joint_2",
+                "Joint_3",
+                "Joint_4",
+                "Joint_5",
+                "Joint_6",
+                "Joint_7"
+            ],
+            "failure_modes": [],
+            "skill_failure_prob": 3.7651663757350024e-07
+        }
+    ],
+    "system_failure_prob": 1.2556618506430733e-05,
+    "failure_modes": []
+}
