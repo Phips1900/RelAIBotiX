@@ -12,12 +12,14 @@ from dra_pdf import *
 def load_data(file_path):
     # data = np.load(file_path)
     data = np.load(file_path, allow_pickle=True)
-    # Extract joint_positions and filter out any entries that do not have exactly 6 elements
-    joint_positions_list = [entry['gripper_state'] for entry in data if len(entry['gripper_state']) == 2]
-
-    # Convert the filtered list of joint_positions into a numpy array
-    joint_positions_array = np.array(joint_positions_list)
-
+    row = []
+    for i in data:
+        joint_positions = i['joint_positions']
+        # gripper_state = i['gripper_state']
+        joint_velocities = i['joint_velocities']
+        label = i['task_name']
+        row.append(joint_positions + joint_velocities + [label])
+    shaped_data = np.array(row)
     # Franka Emika Cable
     '''
     data_new = data.item()
