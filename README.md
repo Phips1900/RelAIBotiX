@@ -1,5 +1,5 @@
 # RelAIBotiX <!-- omit from toc -->
-Dynamic Reliability Assessment for Robotic Systems
+Dynamic Reliability Assessment Framework for AI-Controlled Robotic Systems
 
 ## Table of Contents <!-- omit from toc -->
 - [Introduction](#introduction)
@@ -20,7 +20,7 @@ RelAIBotiX presents a new methodology that enables dynamic and continuous reliab
 - **Decision Support**: Provides insights on whether a control policy should be deployed in a real system
 
 ## Approach
-![RelAIBotiX Framework](figures/RelAIBotiX_Framework.png)
+![RelAIBotiX Framework](figures/relaibotix_new.png)
 The application of the RelAIBotiX framework requires three key steps:
 
 ### 1. Data Generation
