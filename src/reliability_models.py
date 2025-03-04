@@ -5,7 +5,7 @@ reliability model class
 @version 1.0
 @date 31.07.2024
 """
-from dra_solver import *
+from solver import *
 
 
 class HybridReliabilityModel:
@@ -415,4 +415,4 @@ class FailureMode:
         self.likelihood = ''
         return True
 
-# End of file dra_reliability_models.py
+# End of file reliability_models.py

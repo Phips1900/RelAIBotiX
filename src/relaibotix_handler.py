@@ -1,12 +1,12 @@
-from dra_robotic_system import *
-from dra_reliability_models import *
-from dra_graph import *
-from dra_json import *
-from dra_solver import *
-from dra_behavioral_analysis import *
+from robotic_system import *
+from reliability_models import *
+from graph import *
+from json_handler import *
+from solver import *
+from behavioral_analysis import *
 import numpy as np
 import matplotlib.pyplot as plt
-from dra_pdf import *
+from pdf_handler import *
 
 
 def load_data(file_path):
@@ -316,7 +316,7 @@ def perform_sensitivity_analysis(hybrid_model, robotic_system, sensitivity_analy
 # Franka cable
 # robotic_data = read_json('config_files/franka_cable_config.json')
 # OpenManipulator
-robotic_data = read_json('config_files/open_manipulator_config.json')
+robotic_data = read_json('../config_files/open_manipulator_config.json')
 component_names = robotic_data['components']
 robotic_name = robotic_data['robot']
 robotic_type = robotic_data['robot_type']
@@ -333,7 +333,7 @@ print(robotic_system.get_name())
 # robot_data = load_data('datasets/pick_pour_place_philipp.npy')
 # robot_data = load_data('datasets/ur5_traj_1.npy')
 # robot_data = load_data('datasets/franka_cable_route_traj1.npy')
-robot_data = load_data('datasets/open_manipulator_traj1.npy')
+robot_data = load_data('../datasets/open_manipulator_traj1.npy')
 # plot_data_ur5(robot_data, save_path='plots/ur5.png')
 behavioral_profile = BehavioralAnalysis(name=robotic_system.get_name(), time_series=robot_data, robot_type=robotic_system.get_robot_type())
 behavioral_profile.detect_skill_sequence()

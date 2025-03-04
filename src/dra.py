@@ -1,7 +1,7 @@
-from dra_robotic_system import *
-from dra_reliability_models import *
-from dra_graph import *
-from dra_json import *
+from robotic_system import *
+from reliability_models import *
+from graph import *
+from json_handler import *
 
 component_names = ['Joint_1', 'Joint_2', 'Joint_3', 'Joint_4', 'Joint_5', 'Joint_6', 'Joint_7', 'Controller', 'Power_Supply', 'Gripper', 'Camera', 'Sensors']
 components = {}
