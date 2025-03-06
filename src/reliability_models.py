@@ -1,70 +1,137 @@
 """
-Dynamic Reliability Assessment
-reliability model class
+RelAIBotiX
+Reliability Model classes
 @author Philipp Grimmeisen
 @version 1.0
-@date 31.07.2024
 """
+
 from solver import *
+from typing import Optional, List, Tuple, Dict, Any
 
 
 class HybridReliabilityModel:
     """
-    @brief HybridReliabilityModel class
+    A model that combines Markov chain and fault tree methods to evaluate system reliability.
+
+    This class provides methods to add, remove, and access the individual components (Markov chain
+    and fault trees) and to compute the overall system reliability.
     """
     def __init__(self, name):
-        """@brief constructor"""
-        self.name = name
-        self.markov_chain = None    # MarkovChain object
-        self.fault_trees = []       # list of FaultTree objects
+        """
+        Initialize the HybridReliabilityModel with a name.
 
-    def clear(self):
-        """@brief clears all elements of the class HybridReliabilityModel"""
+        Parameters:
+            name (str): The identifier for this reliability model.
+        """
+        self.name = name
+        self.markov_chain = None    # Instance of a MarkovChain
+        self.fault_trees: list[FaultTree] = []      # List to hold FaultTree instances
+
+    def clear(self) -> None:
+        """
+          Reset the model by clearing its name, Markov chain, and fault trees.
+        """
         self.name = ""
         self.markov_chain = None
         self.fault_trees.clear()
 
-    def add_markov_chain(self, markov_chain):
-        """@brief adds a MarkovChain object to the HybridReliabilityModel"""
+    def add_markov_chain(self, markov_chain) -> bool:
+        """
+        Set the MarkovChain for the model.
+
+        Parameters:
+            markov_chain (MarkovChain): The MarkovChain instance to assign.
+
+        Returns:
+            bool: True upon successful assignment.
+        """
         self.markov_chain = markov_chain
         return True
 
-    def add_fault_tree(self, fault_tree):
-        """@brief adds a FaultTree object to the list of FaultTree objects"""
+    def add_fault_tree(self, fault_tree) -> bool:
+        """
+        Append a FaultTree to the model.
+
+        Parameters:
+            fault_tree: The FaultTree instance to add.
+
+        Returns:
+            bool: True upon successful addition.
+        """
         self.fault_trees.append(fault_tree)
         return True
 
     def get_markov_chain(self):
-        """@brief returns the MarkovChain object"""
+        """
+        Retrieve the currently set MarkovChain.
+
+        Returns:
+            MarkovChain or None: The MarkovChain instance, or None if not set.
+        """
         return self.markov_chain
 
     def get_fault_trees(self):
-        """@brief returns the list of FaultTree objects"""
+        """
+        Retrieve the list of FaultTree instances.
+
+        Returns:
+            list: A list containing all FaultTree instances added to the model.
+        """
         return self.fault_trees
 
-    def remove_fault_tree(self, fault_tree):
-        """@brief removes a FaultTree object from the list of FaultTree objects"""
+    def remove_fault_tree(self, fault_tree) -> bool:
+        """
+        Remove a FaultTree instance from the model.
+
+        Parameters:
+            fault_tree (FaultTree): The FaultTree instance to remove.
+
+        Returns:
+            bool: True if removal was successful, False if the FaultTree was not found.
+        """
         if fault_tree not in self.fault_trees:
             return False
         self.fault_trees.remove(fault_tree)
         return True
 
-    def remove_markov_chain(self):
-        """@brief removes the MarkovChain object"""
+    def remove_markov_chain(self) -> bool:
+        """
+        Remove the MarkovChain from the model.
+
+        Returns:
+            bool: True upon successful removal.
+        """
         self.markov_chain = None
         return True
 
-    def get_name(self):
-        """@brief returns the name of the HybridReliabilityModel"""
+    def get_name(self) -> str:
+        """
+        Get the name of the reliability model.
+
+        Returns:
+            str: The name of the model.
+        """
         return self.name
 
-    def set_name(self, name):
-        """@brief sets the name of the HybridReliabilityModel"""
+    def set_name(self, name: str) -> bool:
+        """
+        Set or update the model's name.
+
+        Parameters:
+            name (str): The new name for the model.
+
+        Returns:
+            bool: True upon successful update.
+        """
         self.name = name
         return True
 
-    def compute_system_reliability(self, ft_dict, repeat_dict={}):
-        """@brief computes the system reliability of the HybridReliabilityModel"""
+    def compute_system_reliability(self, ft_dict, repeat_dict: Optional[Dict] = None) -> Tuple[float, List[float], List[float]]:
+
+        if self.markov_chain is None:
+            raise ValueError("Cannot compute reliability: Markov chain is not set.")
+
+        # Call the hybrid_solver function to compute the probability and time to absorption
         absorption_prob, absorption_time = hybrid_solver(ft_dict=ft_dict, mc_object=self.markov_chain, repeat_dict=repeat_dict)
         num_cols = absorption_prob.shape[1]
         num_cols = num_cols - 1

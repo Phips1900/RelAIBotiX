@@ -3,21 +3,16 @@ Dynamic Reliability Assessment Framework for AI-Controlled Robotic Systems
 
 ## Table of Contents <!-- omit from toc -->
 - [Introduction](#introduction)
-- [Features](#features)
 - [Approach](#approach)
 - [Installation](#installation)
+- [Usage](#usage)
+  - [Command-line Arguments](#command-line-arguments)
+  - [Running the Analysis](#running-the-analysis)
 
 ## Introduction
 AI-controlled robotic systems can introduce significant risks to both humans and the environment. Traditional reliability assessment methods fall short in addressing the complexities of these systems, particularly when dealing with black-box or dynamically changing control policies. These traditional approaches are applied manually and do not consider frequent software updates. 
 
 RelAIBotiX presents a new methodology that enables dynamic and continuous reliability assessment, specifically tailored for robotic systems controlled by AI algorithms.
-
-## Features
-- **Time-Series Data Collection**: Supports real and simulated robotic systems
-- **Reliability Analysis**: Evaluates control policies based on recorded time-series data
-- **Skill Detection & Behavioral Analysis**: Identifies robotic behaviors and their impact on reliability
-- **Reliability Model Generation**: Constructs probabilistic models such as fault trees and Markov chains
-- **Decision Support**: Provides insights on whether a control policy should be deployed in a real system
 
 ## Approach
 ![RelAIBotiX Framework](figures/relaibotix_new.png)
@@ -53,8 +48,44 @@ pip install -r requirements.txt
 ```
 
 ## Usage
-Provide instructions on how to run the framework, including data input format and execution steps.
+
+To run the **RelAIBotiX** framework, use the `relaibotix_handler.py` script with the required arguments.
+
+### **Command-line Arguments**
+
+| Argument         | Description                                       | Example                                   |
+|-----------------|---------------------------------------------------|-------------------------------------------|
+| `--config`      | Path to the robot configuration JSON file         | `../config_files/franka_config.json`      |
+| `--dataset`     | Path to the dataset (.npy file)                   | `../datasets/pick_place_dataset_franka.npy` |
+| `--json_output` | Path to save the reliability report as JSON | `../output/robotic_system_openM.json`    |
+| `--spider_chart` | Path to save the generated spider chart           | `../plots/spider_chart_openM.png`        |
+| `--pdf_output`  | Path to save the PDF report                       | `../output/robot_report_openM.pdf`       |
+
+### **Running the Analysis**
+
+Execute the following command to perform a reliability assessment:
+
+```bash
+cd src
+python relaibotix_handler.py \
+  --config ../config_files/franka_config.json \
+  --dataset ../datasets/pick_place_dataset_franka.npy \
+  --json_output ../output/robotic_system_openM.json \
+  --spider_chart ../plots/spider_chart_openM.png \
+  --pdf_output ../output/robot_report_openM.pdf
+```
+
+## Skill Detector (Upcoming Integration)
+
+> ⚠ **Note:** The **Skill Detector** module, which identifies robotic behaviors from time-series data, is currently maintained in a separate repository. It will be integrated into **RelAIBotiX** soon. Until then, a placeholder method is used. Future updates will provide seamless integration, allowing full automation of the skill detection and analysis process.
+
+## Citation
+```bibtex
+
+```
+
 
 ## License
 This project is licensed under the MIT License.
+
 
