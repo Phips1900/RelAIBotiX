@@ -70,9 +70,9 @@ cd src
 python relaibotix_handler.py \
   --config ../config_files/franka_config.json \
   --dataset ../datasets/pick_place_dataset_franka.npy \
-  --json_output ../output/robotic_system_openM.json \
-  --spider_chart ../plots/spider_chart_openM.png \
-  --pdf_output ../output/robot_report_openM.pdf
+  --json_output ../output/reliability_report.json \
+  --spider_chart ../plots/spider_chart.png \
+  --pdf_output ../output/reliability_report.pdf
 ```
 
 ## Skill Detector (Upcoming Integration)
