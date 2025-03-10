@@ -1,8 +1,8 @@
-from json_handler import *
-from behavioral_analysis import *
-from pdf_handler import *
-from relaibotix_helper import *
+"""This module provides the main function to run RelAIBotiX."""
 import argparse
+from json_handler import write_json, read_json
+from pdf_handler import create_pdf_from_json_and_plots
+from relaibotix_helper import *
 
 
 def relaibotix(config_file: str,
@@ -31,7 +31,9 @@ def relaibotix(config_file: str,
     for component, reliability_data in component_names.items():
         failure_probability = reliability_data['failure_probability']
         redundancy = reliability_data['redundancy']
-        robotic_system.add_component(Component(component, failure_prob=failure_probability, redundancy=redundancy))
+        robotic_system.add_component(Component(component,
+                                               failure_prob=failure_probability,
+                                               redundancy=redundancy))
 
     # Load dataset
     robot_data = load_data(dataset_file)
@@ -78,7 +80,9 @@ def relaibotix(config_file: str,
 
     # Perform sensitivity analysis and create a spider chart
     sensitivity_analysis_data = {'None': system_reliability}
-    sensitivity_analysis_data = perform_sensitivity_analysis(hybrid_model, robotic_system, sensitivity_analysis_data)
+    sensitivity_analysis_data = perform_sensitivity_analysis(hybrid_model,
+                                                             robotic_system,
+                                                             sensitivity_analysis_data)
     create_custom_spider_chart(sensitivity_analysis_data, title='System failure probability',
                                save_path=spider_chart_output)
 
@@ -93,6 +97,7 @@ def relaibotix(config_file: str,
 
 
 def main():
+    """Main function to run RelAIBotiX."""
     parser = argparse.ArgumentParser(description="Run RelAIBotiX.")
     parser.add_argument("--config", required=True, help="Path to the robot configuration JSON file")
     parser.add_argument("--dataset", required=True, help="Path to the dataset (.npy file)")

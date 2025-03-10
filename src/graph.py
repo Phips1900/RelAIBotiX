@@ -1,8 +1,5 @@
 """
-Dynamic Reliability Assessment graph generator
-@author Philipp Grimmeisen
-@version 1.0
-@date 01.08.2024
+Graph generator for Markov Chains and Fault Trees.
 """
 
 import networkx as nx
@@ -16,7 +13,7 @@ def create_mc_graph(mc_object):
     mc_states = mc_object.get_states()
     mc_states.extend(mc_object.get_absorbing_states())
     mc_graph.add_nodes_from(mc_states)
-    mc_edges = mc_object.get_edges()
+    # mc_edges = mc_object.get_edges()
     mc_transitions = mc_object.get_transitions()
     for from_state, x in mc_transitions.items():
         for to_state, value in x.items():
@@ -86,10 +83,12 @@ def plot_data_ur5(data, save_path=None):
 
 def create_custom_spider_chart(data_dict, title='Spider Diagram', save_path=None):
     """
-    Creates a custom spider (radar) diagram based on a dictionary of components and their associated probabilities.
+    Creates a custom spider (radar) diagram based on a dictionary of components and
+    their associated probabilities.
 
     Parameters:
-    - data_dict (dict): A dictionary where keys are components (str) and values are probabilities (float).
+    - data_dict (dict): A dictionary where keys are components (str)
+                        and values are probabilities (float).
     - title (str): The title of the spider diagram.
 
     Returns:
@@ -160,22 +159,23 @@ def create_custom_mc_graph(states, absorbing_states, transitions, output_file=No
     - states (list): List of all states.
     - absorbing_states (list): List of absorbing states.
     - transitions (dict): Nested dictionary where the first key is the from_state,
-                          the second key is the to_state, and the value is the transition probability (float).
-    - output_file (str): Optional. If provided, saves the graph as an image file with the given name.
+                          the second key is the to_state,
+                          and the value is the transition probability (float).
+    - output_file (str): If provided, saves the graph as an image file with the given name.
 
     Returns:
     - None: Displays or saves the Markov Chain graph.
     """
     # Initialize the directed graph
-    G = nx.DiGraph()
+    g = nx.DiGraph()
 
     # Add nodes
-    G.add_nodes_from(states + absorbing_states)
+    g.add_nodes_from(states + absorbing_states)
 
     # Add edges with transition probabilities
     for from_state, to_transitions in transitions.items():
         for to_state, probability in to_transitions.items():
-            G.add_edge(from_state, to_state, weight=probability)
+            g.add_edge(from_state, to_state, weight=probability)
 
     # Define manual positions for a left-right layout
     pos = {}
@@ -192,15 +192,16 @@ def create_custom_mc_graph(states, absorbing_states, transitions, output_file=No
     # Draw the graph
     plt.figure(figsize=(10, len(states) * 1.5))
     nx.draw(
-        G, pos, with_labels=True,
-        node_color=['white' if state not in absorbing_states else 'red' for state in G.nodes()],
-        node_size=5000, font_size=14, font_weight='bold', edge_color='green', arrows=True, width=2, edgecolors='black'
+        g, pos, with_labels=True,
+        node_color=['white' if state not in absorbing_states else 'red' for state in g.nodes()],
+        node_size=5000, font_size=14, font_weight='bold',
+        edge_color='green', arrows=True, width=2, edgecolors='black'
     )
 
     # Draw edge labels
-    edge_labels = {(from_state, to_state): f"{G[from_state][to_state]['weight']:.2f}"
-                   for from_state, to_state in G.edges()}
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_color='black', font_size=14, label_pos=0.5)
+    edge_labels = {(from_state, to_state): f"{g[from_state][to_state]['weight']:.2f}"
+                   for from_state, to_state in g.edges()}
+    nx.draw_networkx_edge_labels(g, pos, edge_labels=edge_labels, font_color='black', font_size=14, label_pos=0.5)
 
     # Remove axis
     plt.axis('off')
@@ -211,25 +212,3 @@ def create_custom_mc_graph(states, absorbing_states, transitions, output_file=No
 
     # Show the plot
     plt.show()
-
-
-# Example usage:
-states = ["object_detection", "move", "pick", "carry", "place", "reset", "done"]
-absorbing_states = ["object_detection_failure", "move_failure", "pick_failure", "carry_failure", "place_failure",
-                    "reset_failure"]
-
-# Define all transitions, including those between transient states
-transitions = {
-    "object_detection": {"move": 0.8, "object_detection_failure": 0.2},
-    "move": {"pick": 0.7, "move_failure": 0.3},
-    "pick": {"carry": 0.6, "pick_failure": 0.4},
-    "carry": {"place": 0.5, "carry_failure": 0.5},
-    "place": {"reset": 0.9, "place_failure": 0.1},
-    "reset": {"done": 0.8, "reset_failure": 0.2},
-}
-
-create_custom_mc_graph(states, absorbing_states, transitions)
-
-print(states)
-
-

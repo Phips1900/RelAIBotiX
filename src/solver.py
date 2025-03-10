@@ -1,11 +1,11 @@
-# Description: This file contains the solvers for the fault tree and Markov chain models.
+"""Description: This file contains the solvers for the fault tree and Markov chain models."""
 import networkx as nx
 import numpy as np
 from scipy import linalg
 
 
 def solve_ft(ft_graph, ft_object):
-    """@brief bottom up fault tree solver"""
+    """Bottom up fault tree solver"""
     result_map = {}
     ft_gates = nx.get_node_attributes(ft_graph, 'gate_type')
     ft_probs = nx.get_node_attributes(ft_graph, 'failure_prob')
@@ -22,6 +22,7 @@ def solve_ft(ft_graph, ft_object):
 
 
 def solve_dfs(successor_dict, ft_gates, ft_basic_events, result_map):
+    """Depth first search algorithm for the fault tree solver"""
     tmp_var = 0
     if successor_dict:
         for node, edges in successor_dict.items():
@@ -43,6 +44,7 @@ def solve_dfs(successor_dict, ft_gates, ft_basic_events, result_map):
 
 
 def solve_ft_gate(edges, gate_type, basic_events, result_map):
+    """Solves the gate type of the fault tree"""
     result_and = 1
     result_or = 0
     if gate_type == 'AND':
@@ -73,7 +75,7 @@ def solve_ft_gate(edges, gate_type, basic_events, result_map):
 
 
 def solve_mc(mc_object):
-    """@brief MC solver that computes probability of absorption and time to absorption"""
+    """Numerical MC solver that computes probability of absorption and time to absorption"""
     state_list = mc_object.get_states()
     absorbing_state_list = mc_object.get_absorbing_states()
     transitions = mc_object.get_transitions()
@@ -83,12 +85,12 @@ def solve_mc(mc_object):
     i_matrix = np.identity(number_of_transient_states)
     c_vector = np.ones((number_of_transient_states, 1))
 
-    """compute probability of absorption"""
+    # compute probability of absorption
     n_matrix = i_matrix - q_matrix
     lu, piv = linalg.lu_factor(n_matrix)
     b_matrix = linalg.lu_solve((lu, piv), r_matrix)
 
-    """compute time to absorption"""
+    # compute time to absorption
     lu_1, piv_1 = linalg.lu_factor(n_matrix)
     t_matrix = linalg.lu_solve((lu_1, piv_1), c_vector)
 
@@ -96,10 +98,11 @@ def solve_mc(mc_object):
 
 
 def create_mc_transition_matrix(state_list, absorbing_state_list, transitions):
-    """@brieg creates the transition matrix"""
+    """Creates the transition matrix"""
     state_list.extend(absorbing_state_list)
     if absorbing_state_list:
-        print("This is an absorbing Markov chain with " + str(len(absorbing_state_list)) + " absorbing states.")
+        print("This is an absorbing Markov chain with " + str(len(absorbing_state_list)) +
+              " absorbing states.")
     else:
         print("This is not an absorbing Markov chain.")
     p = np.zeros((len(state_list), len(state_list)))
@@ -112,7 +115,7 @@ def create_mc_transition_matrix(state_list, absorbing_state_list, transitions):
 
 
 def create_canonical_form(transition_matrix, state_list, absorbing_state_list):
-    """@brief brings the transition matrix into the canonical form for further computations"""
+    """Converts the transition matrix into the canonical form for further computations"""
     state_list.extend(absorbing_state_list)
     absorbing_indices = []
     transient_indices = []
@@ -130,8 +133,10 @@ def create_canonical_form(transition_matrix, state_list, absorbing_state_list):
     return q_matrix, r_matrix
 
 
-def hybrid_solver(ft_dict, mc_object, repeat_dict={}):
-    """@brief Hybrid risk model solver. Solves first all FTs, then the MC"""
+def hybrid_solver(ft_dict, mc_object, repeat_dict=None):
+    """Hybrid risk model solver. Solves first all FTs, then the MC"""
+    if repeat_dict is None:
+        repeat_dict = {}
     ft_result_dict = {}
     mc_transitions = mc_object.get_transitions()
     for ft, ft_elements in ft_dict.items():

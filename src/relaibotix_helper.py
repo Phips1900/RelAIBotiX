@@ -1,6 +1,7 @@
-import numpy as np
-import os
+"""This module provides helper functions for RelAIbotiX."""
 from typing import Dict, Union, Any, List
+import os
+import numpy as np
 from robotic_system import *
 from graph import *
 from reliability_models import *
@@ -189,7 +190,8 @@ def add_skills(skills: List[int], robotic_system: Any) -> None:
 
     Args:
         skills (List[int]): A list of skill IDs.
-        robotic_system: The robotic system instance that has a 'name' attribute and an 'add_skill' method.
+        robotic_system: The robotic system instance that has a 'name' attribute
+                        and an 'add_skill' method.
     """
     for skill_id in skills:
         skill_name = get_skill_str(skill_id, robotic_system=robotic_system.name)
@@ -202,10 +204,11 @@ def add_properties(classified_properties: Dict[Any, Dict[str, Any]], robotic_sys
     Adds properties to each component of the robotic system based on classified properties.
 
     Args:
-        classified_properties (Dict[Any, Dict[str, Any]]): A dictionary where each key is a skill (or skill id)
+        classified_properties (Dict[Any, Dict[str, Any]]):
+            A dictionary where each key is a skill (or skill id)
             and its value is another dictionary mapping property names to property values.
             Each property value is expected to be an indexable object (e.g., list or dict).
-        robotic_system: The robotic system instance with a 'components' attribute (list of components).
+        robotic_system: The robotic system instance.
     """
     for skill, properties in classified_properties.items():
         for component in robotic_system.components:
@@ -228,9 +231,10 @@ def add_components_to_skill(robotic_system: Any, active_components: Dict[Any, Li
     Adds components to each skill of the robotic system based on the active components mapping.
 
     Args:
-        robotic_system: The robotic system instance that has a 'skills' attribute (list of skills)
+        robotic_system: The robotic system instance that has a 'skills' attribute
             and a 'name' attribute.
-        active_components (Dict[Any, List[int]]): A dictionary mapping a skill (or skill id) to a list of
+        active_components (Dict[Any, List[int]]):
+            A dictionary mapping a skill (or skill id) to a list of
             component IDs that should be added to that skill.
     """
     for skill_id, component_ids in active_components.items():
@@ -242,7 +246,8 @@ def add_components_to_skill(robotic_system: Any, active_components: Dict[Any, Li
                 skill.add_component('Sensors')
                 # Add the active components using the lookup table.
                 for component_id in component_ids:
-                    component_name = get_component_str(component_id, robotic_system=robotic_system.name)
+                    component_name = get_component_str(component_id,
+                                                       robotic_system=robotic_system.name)
                     skill.add_component(component_name)
 
 
@@ -481,10 +486,10 @@ def perform_sensitivity_analysis(hybrid_model: Any,
 
         # Create a fault tree dictionary and compute system reliability.
         new_fts = create_ft_dict(hybrid_model_new)
-        new_system_reliability, new_absorption_prob, new_absorption_time = hybrid_model_new.compute_system_reliability(
+        new_system_reliability, new_absorption_prob, new_absorption_time = (hybrid_model_new.compute_system_reliability(
             ft_dict=new_fts,
             repeat_dict={'done': 0.1, 'object_detection': 0.9}
-        )
+        ))
 
         # Store the computed reliability in the sensitivity analysis data.
         sensitivity_analysis_data[component.name] = new_system_reliability
