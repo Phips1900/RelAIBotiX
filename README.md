@@ -1,4 +1,6 @@
 # RelAIBotiX <!-- omit from toc -->
+[![linting: pylint](https://img.shields.io/badge/linting-pylint-yellowgreen)](https://github.com/pylint-dev/pylint)
+
 Dynamic Reliability Assessment Framework for AI-Controlled Robotic Systems
 
 ## Table of Contents <!-- omit from toc -->
