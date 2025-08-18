@@ -1,0 +1,6 @@
+# CNN-Lstm model configuration
+_target_: models.cnn_lstm.CNNLSTM
+window_size: 100
+num_features: 8      # data features length
+num_classes: 5      # classes
+learning_rate: 0.001

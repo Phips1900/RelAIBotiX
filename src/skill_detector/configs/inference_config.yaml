@@ -1,0 +1,20 @@
+# Usage: python src/inference_engine.py data_path="./dataset/inference/data.h5" robot=ur5  # Run from project root
+
+defaults:
+  - model_selector: rule_based  # refers to model_selector/rule_based.yaml
+  - robot: franka
+  - _self_
+
+data_path: "${hydra:runtime.cwd}/dataset/inference/panda_X.h5"
+structure:
+  features_key: "features"
+  labels_key: "labels"
+feature_columns: [0, 1, 2, 3, 4, 5, 6, 21]
+num_classes: 5 # needs to match the number of classes the model was trained on
+window_size: 500 # needs to match the number of windows the model was trained on
+device: mps
+batch_size: 32
+
+hydra:
+  run:
+    dir: ${hydra:runtime.cwd}/outputs/${robot.robot_type}/inference/${now:%Y-%m-%d_%H-%M}

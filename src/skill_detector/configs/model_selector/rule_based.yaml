@@ -1,0 +1,8 @@
+type: rule_based
+rules:
+  - robot: franka            #num_features: 22 (for dynamic selector for manipulator, during run-time)
+    checkpoint: models/panda/ckpts/panda_cnn_trans_fpe_B_epoch=33.ckpt
+    model: cnn_transformer
+  - robot: ur5
+    checkpoint: models/panda/ckpts/panda_cnn_trans_fpe_B_epoch=33.ckpt
+    model: cnn_transformer

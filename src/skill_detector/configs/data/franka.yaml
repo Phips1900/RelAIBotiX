@@ -1,0 +1,11 @@
+# Dataset configuration for Franka robots
+path: "${hydra:runtime.cwd}/dataset/train/panda_F_train.h5" #set path here starting from dataset.
+structure:
+  features_key: "features"
+  labels_key: "labels"
+feature_columns: [0, 1, 2, 3, 4, 5, 6, 21]
+window_size: 500      #if this value is changed, then it must be updated in respective model's window size
+test_size: 0.2
+random_state: 42
+train_shuffle: True
+test_shuffle: False
