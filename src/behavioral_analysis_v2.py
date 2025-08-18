@@ -13,7 +13,7 @@ class ComponentMetrics:
 
 
 @dataclass
-class SkillEpisode:
+class SkillSegment:
     idx: int
     name: str
     start_idx: int
@@ -37,7 +37,7 @@ class RunTrace:
     final_pos: Tuple[float, float, float]
     pos_error_norm: float
     success: bool
-    episodes: List[SkillEpisode]
+    segments: List[SkillSegment]
 
 
 SKILL_ID_TO_NAME = {0: "Init", 1: "Move", 2: "Pick", 3: "Carry", 4: "Place"}
@@ -112,12 +112,12 @@ class BehavioralAnalyzer:
         traces: List[RunTrace] = []
 
         for run_id, (i0, i1) in enumerate(run_bounds):
-            # segment episodes via run-length on labels slice
-            episodes = self._segment_episodes(labels[i0:i1 + 1], timestamps[i0:i1 + 1], offset=i0)
+            # segment segments via run-length on labels slice
+            segments = self._segment_skills(labels[i0:i1 + 1], timestamps[i0:i1 + 1], offset=i0)
 
             # per-episode component metrics
-            for ep in episodes:
-                ep.components = self._component_metrics(features, component_cols, timestamps, ep.start_idx, ep.end_idx)
+            for se in segments:
+                se.components = self._component_metrics(features, component_cols, timestamps, se.start_idx, se.end_idx)
 
             # success from CSV
             goal = tuple(trials_csv.loc[run_id, ["x_plan", "y_plan", ]].astype(float))
@@ -135,10 +135,10 @@ class BehavioralAnalyzer:
                 start_idx=i0, end_idx=i1,
                 t_start=float(timestamps[i0]), t_end=float(timestamps[i1]),
                 duration=float(timestamps[i1] - timestamps[i0]),
-                skill_sequence=[ep.name for ep in episodes],
+                skill_sequence=[se.name for se in segments],
                 goal_pos=goal, final_pos=final,
                 pos_error_norm=pos_err, success=success,
-                episodes=episodes
+                segments=segments
             ))
         return traces
 
@@ -186,7 +186,7 @@ class BehavioralAnalyzer:
                     while i < n and skills[i] == 4:
                         last4 = i;
                         i += 1
-                    # walk until next start or EOF, then finalize at last4
+                    # walk until next start or EOF
                     while i < n and skills[i] not in STARTS:
                         i += 1
                     bounds.append((s, last4))
@@ -199,15 +199,15 @@ class BehavioralAnalyzer:
                 break
         return bounds
 
-    def _segment_episodes(self, sk_slice: np.ndarray, t_slice: np.ndarray, offset: int) -> List[SkillEpisode]:
-        eps: List[SkillEpisode] = []
+    def _segment_skills(self, sk_slice: np.ndarray, t_slice: np.ndarray, offset: int) -> List[SkillSegment]:
+        eps: List[SkillSegment] = []
         start = 0;
         idx = 0
         for i in range(1, len(sk_slice) + 1):
             if i == len(sk_slice) or sk_slice[i] != sk_slice[start]:
                 s_id = int(sk_slice[start])
                 name = SKILL_ID_TO_NAME.get(s_id, str(s_id))
-                eps.append(SkillEpisode(
+                eps.append(SkillSegment(
                     idx=idx, name=name,
                     start_idx=offset + start, end_idx=offset + i - 1,
                     t_start=float(t_slice[start]), t_end=float(t_slice[i - 1]),
@@ -216,7 +216,7 @@ class BehavioralAnalyzer:
                 ))
                 idx += 1;
                 start = i
-        # keep Init episode in the timeline (useful for durations); drop later if you want
+
         return eps
 
     def _component_metrics(
@@ -372,8 +372,7 @@ class BehavioralAnalyzer:
           - comp_active:  DataFrame [component, total_active_time_sec]
           - comp_active_by_skill: DataFrame [skill, component, total_active_time_sec]
         """
-        import pandas as pd
-        runs_df, episodes_df, components_df = self.to_frames(traces)
+        runs_df, segments_df, components_df = self.to_frames(traces)
 
         # ---- totals
         total_run_time = float(runs_df["duration"].sum())
@@ -381,12 +380,12 @@ class BehavioralAnalyzer:
         global_totals = {"total_run_time_sec": total_run_time, "n_runs": n_runs}
 
         # ---- skill totals and averages
-        skill_group = episodes_df.groupby("skill", as_index=False)["duration"].agg(total_time_sec="sum",
+        skill_group = segments_df.groupby("skill", as_index=False)["duration"].agg(total_time_sec="sum",
                                                                                    n_episodes="count")
         skill_group["avg_time_per_episode_sec"] = skill_group["total_time_sec"] / skill_group["n_episodes"]
 
         # per-run time spent in each skill → average across runs
-        per_run_skill = episodes_df.groupby(["run_id", "skill"], as_index=False)["duration"].sum()
+        per_run_skill = segments_df.groupby(["run_id", "skill"], as_index=False)["duration"].sum()
         avg_per_run = per_run_skill.groupby("skill", as_index=False)["duration"].mean().rename(
             columns={"duration": "avg_time_per_run_sec"})
         skill_time = skill_group.merge(avg_per_run, on="skill", how="left")
@@ -399,7 +398,7 @@ class BehavioralAnalyzer:
                 "active_time_sec"].sum() \
                 .rename(columns={"active_time_sec": "total_active_time_sec"})
         else:
-            # if not present (shouldn't happen with our latest code), return empties
+            # if not present, return empties
             comp_active = pd.DataFrame(columns=["component", "total_active_time_sec"])
             comp_active_by_skill = pd.DataFrame(columns=["skill", "component", "total_active_time_sec"])
 
@@ -419,24 +418,24 @@ class BehavioralAnalyzer:
             pos_error_norm=r.pos_error_norm, success=r.success
         ) for r in traces])
 
-        # ---- episodes_df
+        # ---- segments_df
         episodes_rows = []
         for r in traces:
-            for ep in r.episodes:
+            for se in r.segments:
                 episodes_rows.append(dict(
-                    run_id=r.run_id, ep_idx=ep.idx, skill=ep.name,
-                    start_idx=ep.start_idx, end_idx=ep.end_idx,
-                    t_start=ep.t_start, t_end=ep.t_end, duration=ep.duration
+                    run_id=r.run_id, ep_idx=se.idx, skill=se.name,
+                    start_idx=se.start_idx, end_idx=se.end_idx,
+                    t_start=se.t_start, t_end=se.t_end, duration=se.duration
                 ))
-        episodes_df = pd.DataFrame(episodes_rows)
+        segments_df = pd.DataFrame(episodes_rows)
 
         # ---- components_df (normalized active time columns)
         comp_rows = []
         for r in traces:
-            for ep in r.episodes:
-                for comp, cm in ep.components.items():
+            for se in r.segments:
+                for comp, cm in se.components.items():
                     row = dict(
-                        run_id=r.run_id, ep_idx=ep.idx, skill=ep.name,
+                        run_id=r.run_id, ep_idx=se.idx, skill=se.name,
                         component=comp, active=cm.active,
                     )
                     # normalized keys (so you don't need to parse metric dict keys later)
@@ -453,7 +452,96 @@ class BehavioralAnalyzer:
                     comp_rows.append(row)
         components_df = pd.DataFrame(comp_rows)
 
-        return runs_df, episodes_df, components_df
+        return runs_df, segments_df, components_df
+
+    def summarize(self, traces) -> Dict[str, pd.DataFrame]:
+        """
+        Returns a dict of DataFrames:
+          - sequences:        frequency of skill sequences (count, percent)
+          - overall:          one-row overall summary (totals, success rate)
+          - skill_time:       per-skill total/avg time
+          - comp_usage:       per-skill × component usage/time
+          - joint_velocity:   per-skill × joint velocity peaks (absmax totals, avg max)
+        """
+        runs_df, segments_df, components_df = self.to_frames(traces)
+
+        # --- 1) Skill-sequence frequencies ---
+        seq_series = runs_df["skill_sequence"].apply(lambda seq: " > ".join(seq))
+        seq_counts = seq_series.value_counts().rename_axis("sequence").reset_index(name="count")
+        n_runs = len(runs_df)
+        seq_counts["percent"] = 100.0 * seq_counts["count"] / max(n_runs, 1)
+
+        # --- 2) Overall totals & success rate ---
+        overall = pd.DataFrame([{
+            "n_runs": n_runs,
+            "total_run_time_sec": float(runs_df["duration"].sum()),
+            "success_rate_percent": 100.0 * float(runs_df["success"].mean()) if n_runs else 0.0,
+        }])
+
+        # --- 3) Per-skill total/average time ---
+        skill_time = (
+            segments_df.groupby("skill", as_index=False)["duration"]
+            .agg(total_time_sec="sum", n_episodes="count")
+        )
+        skill_time["avg_time_per_episode_sec"] = skill_time["total_time_sec"] / skill_time["n_episodes"]
+        # per-run avg time in each skill (some runs may lack a skill)
+        per_run_skill = segments_df.groupby(["run_id", "skill"], as_index=False)["duration"].sum()
+        avg_per_run = (
+            per_run_skill.groupby("skill", as_index=False)["duration"]
+            .mean().rename(columns={"duration": "avg_time_per_run_sec"})
+        )
+        skill_time = skill_time.merge(avg_per_run, on="skill", how="left")
+
+        # --- 4) Per-skill × component usage/time ---
+        # n_episodes per skill to compute active %
+        n_eps_per_skill = segments_df.groupby("skill", as_index=False)["ep_idx"].count() \
+            .rename(columns={"ep_idx": "n_episodes_skill"})
+
+        # count episodes where component is active (per skill)
+        # components_df has rows per (run_id, ep_idx, skill, component)
+        active_counts = (
+            components_df.groupby(["skill", "component"], as_index=False)["active"]
+            .sum().rename(columns={"active": "n_active_episodes"})
+        )
+        # total & avg active time per skill×component
+        time_aggs = (
+            components_df.groupby(["skill", "component"], as_index=False)["active_time_sec"]
+            .agg(total_active_time_sec="sum", avg_active_time_sec="mean")
+        )
+        comp_usage = (
+            active_counts.merge(time_aggs, on=["skill", "component"], how="outer")
+            .merge(n_eps_per_skill, on="skill", how="left")
+            .fillna({"n_active_episodes": 0, "total_active_time_sec": 0.0, "avg_active_time_sec": 0.0})
+        )
+        comp_usage["active_pct_episodes"] = 100.0 * comp_usage["n_active_episodes"] / comp_usage[
+            "n_episodes_skill"].clip(lower=1)
+
+        # --- 5) Per-skill × joint velocity peaks ---
+        # Keep only joint components (j1..j7). If you name differently, adjust the startswith.
+        joints_only = components_df[components_df["component"].str.startswith("j")]
+        # robust: some columns might be missing if you didn't store them
+        for col in ["vel_absmax", "vel_max"]:
+            if col not in joints_only.columns:
+                joints_only[col] = pd.NA
+
+        joint_velocity = (
+            joints_only.groupby(["skill", "component"], as_index=False)
+            .agg(
+                total_vel_absmax=("vel_absmax", "sum"),
+                avg_vel_max=("vel_max", "mean"),
+                avg_vel_absmax=("vel_absmax", "mean"),
+                max_vel=("vel_max", "max"),
+                max_abs_vel=("vel_absmax", "max"),
+            )
+        )
+
+        return {
+            "sequences": seq_counts,
+            "overall": overall,
+            "skill_time": skill_time,
+            "comp_usage": comp_usage,
+            "joint_velocity": joint_velocity,
+        }
 
 
 # 1) Load H5 pieces
@@ -483,8 +571,8 @@ traces: List[RunTrace] = an.analyze(
 print(len(traces), "runs")
 print(traces[0].skill_sequence)
 print(traces[3].success, traces[3].pos_error_norm)
-for ep in traces[8].episodes:
-    print(ep.idx, ep.name, ep.duration)
+for se in traces[8].segments:
+    print(se.idx, se.name, se.duration)
 
 totals, skill_time, comp_active, comp_active_by_skill = an.summarize_timings(traces)
 
@@ -492,4 +580,16 @@ print(totals)                 # {'total_run_time_sec': ..., 'n_runs': 10}
 print(skill_time.head())      # per-skill totals + averages
 print(comp_active.sort_values("total_active_time_sec", ascending=False).head())
 print(comp_active_by_skill.head())
+
+summ = an.summarize(traces)
+
+print(summ["sequences"])      # counts + %
+print(summ["overall"])        # n_runs, total time, success %
+print(summ["skill_time"])     # per-skill totals/averages
+print(summ["comp_usage"]      # active % and times per skill×component
+      .sort_values(["skill","active_pct_episodes"], ascending=[True, False])
+      .head(20))
+print(summ["joint_velocity"]  # velocity peaks per joint×skill
+      .sort_values(["skill","total_vel_absmax"], ascending=[True, False])
+      .head(20))
 
