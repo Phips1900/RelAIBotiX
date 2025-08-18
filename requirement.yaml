@@ -1,0 +1,29 @@
+name: relaibotix2
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  # core scientific stack
+  - numpy=2.0.2
+  - pandas=2.2.3
+  - scipy
+  - scikit-learn=1.6.1
+  - h5py=3.13.0
+  - matplotlib=3.10.0
+  - seaborn=0.13.2
+  - networkx
+  - pyyaml
+  - jsonpickle
+  - tqdm=4.67.1
+  # optional but handy
+  - ipykernel
+  - pip
+  - pip:
+      - torch==2.5.1
+      - transformers
+      - pytorch-lightning
+      - torchmetrics==1.6.1
+      - tensorboard
+      - tensorboardx
+      - hydra-core
+      - fpdf
