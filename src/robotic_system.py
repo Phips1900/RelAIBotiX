@@ -29,7 +29,7 @@ class RoboticSystem:
     skills: Dict[str, Skill] = field(default_factory=dict)          # name -> Skill
     system_failure_prob: float = 0.0
 
-    # Attach analyzer artifacts (audit-friendly)
+    # Attach analyzer artifacts
     runs_df: Optional[pd.DataFrame] = None
     segments_df: Optional[pd.DataFrame] = None
     components_df: Optional[pd.DataFrame] = None
