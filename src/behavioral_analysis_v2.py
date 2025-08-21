@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import re
 import h5py
+import json
 
 
 @dataclass
@@ -73,6 +74,11 @@ class BehavioralAnalyzer:
             gripper_close_thresh: float = 0.05,  # <=5% ⇒ considered closed
             gripper_step_thr: float = 0.05,  # >5% change ⇒ transition open↔closed
             gripper_transition_mid: float = 0.5,  # boundary to count transitions
+
+            # velocity band edges and multipliers
+            vel_band_bins: tuple = (0.0, 0.5, 1.0, float("inf")),  # [0..0.5], (0.5..1.0], (1.0..inf)
+            vel_band_multipliers: tuple = (1.0, 1.5, 3.0),  # (low, med, high)
+
     ):
         # store
         self.pos_success_tol = pos_success_tol
@@ -93,6 +99,9 @@ class BehavioralAnalyzer:
         self.gripper_close_thresh = gripper_close_thresh
         self.gripper_step_thr = gripper_step_thr
         self.gripper_transition_mid = gripper_transition_mid
+
+        self.vel_band_bins = vel_band_bins
+        self.vel_band_multipliers = vel_band_multipliers
 
     def analyze(
             self,
@@ -274,10 +283,11 @@ class BehavioralAnalyzer:
                 if "vel" in prop_l:
                     absmax = float(np.max(np.abs(arr)))
                     m[f"{comp}.{prop}_absmax"] = absmax  # magnitude peak
+                    m[f"{comp}.{prop}_max"] = mx
 
-                    eps_vel = getattr(self, "eps_vel", 0.03)  # rad/s
-                    rms_vel_thr = getattr(self, "rms_vel_thr", 0.05)  # rad/s
-                    dc_thr = getattr(self, "dc_thr", 0.2)
+                    eps_vel = self.eps_vel
+                    rms_vel_thr = self.rms_vel_thr  # rad/s
+                    dc_thr = self.dc_thr
 
                     duty_vel = float(np.mean(np.abs(arr) > eps_vel))
                     m[f"{comp}.{prop}_duty_vel"] = duty_vel
@@ -287,6 +297,25 @@ class BehavioralAnalyzer:
 
                     # episode-level activation
                     active_any = active_any or (duty_vel >= dc_thr) or (rms >= rms_vel_thr)
+
+                    # time in velocity bands (per episode)
+                    bt = self._band_times_from_velocity(arr, tseg)
+                    m[f"{comp}.{prop}_time_low_sec"] = bt["time_low_sec"]
+                    m[f"{comp}.{prop}_time_med_sec"] = bt["time_med_sec"]
+                    m[f"{comp}.{prop}_time_high_sec"] = bt["time_high_sec"]
+                    m[f"{comp}.{prop}_moving_time_sec"] = bt["moving_time_sec"]
+
+                    # fractions w.r.t. episode duration (guard div-by-zero)
+                    mt = bt["moving_time_sec"]
+                    # ep_dur = float(tseg[-1] - tseg[0]) if tseg[-1] > tseg[0] else 0.0
+                    if mt > 0:
+                        m[f"{comp}.{prop}_frac_low"] = bt["time_low_sec"] / mt
+                        m[f"{comp}.{prop}_frac_med"] = bt["time_med_sec"] / mt
+                        m[f"{comp}.{prop}_frac_high"] = bt["time_high_sec"] / mt
+                    else:
+                        m[f"{comp}.{prop}_frac_low"] = 0.0
+                        m[f"{comp}.{prop}_frac_med"] = 0.0
+                        m[f"{comp}.{prop}_frac_high"] = 0.0
 
                 # --- position: range criterion + per-sample step mask ---
                 elif "pos" in prop_l:
@@ -454,6 +483,33 @@ class BehavioralAnalyzer:
 
         return runs_df, segments_df, components_df
 
+    def _band_times_from_velocity(self, vel: np.ndarray, ts: np.ndarray):
+        """
+        vel: 1D velocity array over the episode (rad/s)
+        ts:  1D timestamps over the episode (sec)
+        Returns dict with seconds spent in each band: low/med/high.
+        """
+        if vel.size <= 1 or ts.size <= 1:
+            return dict(time_low_sec=0.0, time_med_sec=0.0, time_high_sec=0.0)
+
+        speed = np.abs(vel)
+        # speed = np.where(speed > self.eps_vel, speed, 0.0)  # suppress tiny noise
+        dt = np.diff(ts)
+        s = speed[:-1]  # align with dt (interval starts)
+
+        b0, b1, b2, b3 = self.vel_band_bins
+        move_mask = (s > self.eps_vel)
+
+        low_mask = move_mask & (s <= b1)
+        med_mask = move_mask & (s > b1) & (s <= b2)
+        high_mask = move_mask & (s > b2)
+
+        t_low = float(np.sum(dt[low_mask]))
+        t_med = float(np.sum(dt[med_mask]))
+        t_high = float(np.sum(dt[high_mask]))
+        t_move = t_low + t_med + t_high
+        return dict(time_low_sec=t_low, time_med_sec=t_med, time_high_sec=t_high, moving_time_sec=t_move)
+
     def summarize(self, traces) -> Dict[str, pd.DataFrame]:
         """
         Returns a dict of DataFrames:
@@ -535,13 +591,190 @@ class BehavioralAnalyzer:
             )
         )
 
+        # --- Velocity bands (per skill × joint) ---
+        joints_only = components_df[components_df["component"].str.startswith("j")].copy()
+
+        def pick_cols(df, suffix):
+            cols = [c for c in df.columns if c.endswith(suffix)]
+            return cols[0] if cols else None
+
+        # consolidate band columns (they may be stored per-prop "vel")
+        def col_or_nan(df, suffix):
+            # Try the standard key name as we emitted in _component_metrics
+            # We stored per component as f"{comp}.vel_time_low_sec", but in components_df
+            # we flattened keys, so they will be columns named like "j1.vel_time_low_sec".
+            cols = [c for c in df.columns if c.endswith(suffix)]
+            if not cols:
+                return None
+            # Sum across any duplicates (shouldn't happen; one vel per joint), but safe:
+            df[suffix] = df[cols].sum(axis=1)
+            return suffix
+
+        # low_key = col_or_nan(joints_only, ".vel_time_low_sec")
+        low_col = col_or_nan(joints_only, ".vel_time_low_sec")
+        med_col = col_or_nan(joints_only, ".vel_time_med_sec")
+        high_col = col_or_nan(joints_only, ".vel_time_high_sec")
+        mov_col = col_or_nan(joints_only, ".vel_moving_time_sec")
+
+        # Aggregate total band times per skill×joint
+        if all(c is not None for c in (low_col, med_col, high_col, mov_col)):
+            band_aggs = (
+                joints_only.groupby(["skill", "component"], as_index=False)[[low_col, med_col, high_col, mov_col]]
+                .sum()
+                .rename(columns={
+                    low_col: "time_low_sec",
+                    med_col: "time_med_sec",
+                    high_col: "time_high_sec",
+                    mov_col: "moving_time_sec",
+                })
+            )
+            mt = band_aggs["moving_time_sec"].replace(0, np.nan)
+            band_aggs["frac_low_of_moving"] = band_aggs["time_low_sec"] / mt
+            band_aggs["frac_med_of_moving"] = band_aggs["time_med_sec"] / mt
+            band_aggs["frac_high_of_moving"] = band_aggs["time_high_sec"] / mt
+            band_aggs[["frac_low_of_moving", "frac_med_of_moving", "frac_high_of_moving"]] = \
+                band_aggs[["frac_low_of_moving", "frac_med_of_moving", "frac_high_of_moving"]].fillna(0.0)
+        else:
+            band_aggs = pd.DataFrame(columns=[
+                "skill", "component", "time_low_sec", "time_med_sec", "time_high_sec",
+                "moving_time_sec", "frac_low_of_moving", "frac_med_of_moving", "frac_high_of_moving"
+            ])
+
         return {
             "sequences": seq_counts,
             "overall": overall,
             "skill_time": skill_time,
             "comp_usage": comp_usage,
             "joint_velocity": joint_velocity,
+            "velocity_bands": band_aggs
         }
+
+    def assess_failure_from_bands(self, traces):
+        """
+        Compute P_fail(skill, component) from band exposure.
+        base_prob_per_minute: dict mapping component -> p0 per minute (e.g., {"j1":1e-3, "joint":1e-3, "default":1e-3})
+        Uses self.vel_band_multipliers = (m_low, m_med, m_high).
+        Returns DataFrame with columns:
+          [skill, component, p0_per_min, lambda0_per_s, time_low_sec, time_med_sec, time_high_sec,
+           m_low, m_med, m_high, hazard, p_fail]
+        """
+
+        summary = self.summarize(traces)
+        bands = summary["velocity_bands"].copy()
+        if bands.empty:
+            return pd.DataFrame(columns=[
+                "skill", "component", "p0_per_min", "lambda0_per_s", "time_low_sec", "time_med_sec", "time_high_sec",
+                "m_low", "m_med", "m_high", "hazard", "p_fail"
+            ])
+
+        m_low, m_med, m_high = self.vel_band_multipliers
+
+        def base_p0_for(comp: str):
+            if comp in self.base_prob_per_minute:
+                return float(self.base_prob_per_minute[comp])
+            # allow a generic 'joint' default for all j*
+            if comp.startswith("j") and "joint" in base_prob_per_minute:
+                return float(self.base_prob_per_minute["joint"])
+            if "default" in self.base_prob_per_minute:
+                return float(self.base_prob_per_minute["default"])
+            raise ValueError(
+                f"No base failure probability provided for component '{comp}' and no 'joint'/'default' fallback.")
+
+        rows = []
+        for _, row in bands.iterrows():
+            comp = row["component"]
+            p0 = base_p0_for(comp)
+            # per-second hazard (Poisson assumption)
+            lambda0 = -np.log(max(1.0 - p0, 1e-12)) / 60.0
+
+            tL = float(row["time_low_sec"])
+            tM = float(row["time_med_sec"])
+            tH = float(row["time_high_sec"])
+
+            hazard = lambda0 * (m_low * tL + m_med * tM + m_high * tH)
+            p_fail = 1.0 - np.exp(-hazard)
+
+            rows.append(dict(
+                skill=row["skill"], component=comp,
+                p0_per_min=p0, lambda0_per_s=lambda0,
+                time_low_sec=tL, time_med_sec=tM, time_high_sec=tH,
+                m_low=m_low, m_med=m_med, m_high=m_high,
+                hazard=hazard, p_fail=p_fail
+            ))
+
+        df = pd.DataFrame(rows)
+        return df
+
+    def assess_failure_for_gripper(self, traces):
+        """Compute gripper p_fail(skill) using active_time_sec only."""
+        runs_df, segments_df, components_df = self.to_frames(traces)
+
+        g = components_df[components_df["component"] == "gripper"]
+        if g.empty:
+            return pd.DataFrame(
+                columns=["skill", "component", "active_time_sec", "p0_per_min", "lambda0_per_s", "hazard", "p_fail"])
+
+        agg = g.groupby(["skill", "component"], as_index=False)["active_time_sec"].sum()
+
+        p0 = self.base_prob_per_minute.get("gripper")
+        if p0 is None:
+            raise ValueError("No base probability for 'gripper' (and no 'default'). Provide it in the JSON.")
+
+        lambda0 = -np.log(max(1.0 - p0, 1e-12)) / 60.0
+        agg["p0_per_min"] = p0
+        agg["lambda0_per_s"] = lambda0
+        agg["hazard"] = lambda0 * agg["active_time_sec"]
+        agg["p_fail"] = 1.0 - np.exp(-agg["hazard"])
+        return agg
+
+    def load_base_probs_from_json(self, path: str, *, add_defaults: bool = True):
+        """
+        Reads a JSON like franka_config.json and returns a dict of per-minute base probabilities:
+            {"j1": p0, ..., "j7": p0, "gripper": p0, "controller": p0, "power_supply": p0,
+             "sensors": p0, "camera": p0, "joint": median_joint_p0, "default": median_joint_p0}
+        Also saves:
+            self.hw_config   -> full parsed JSON
+            self.redundancy  -> {component -> bool}
+            self.base_prob_per_minute -> the returned dict
+        """
+        with open(path, "r") as f:
+            cfg = json.load(f)
+        comps = cfg.get("components", {})
+
+        base = {}
+        redundancy = {}
+
+        # Joints: "Joint_1".."Joint_7" -> "j1".."j7"
+        for i in range(1, 8):
+            k = f"Joint_{i}"
+            if k in comps:
+                spec = comps[k]
+                if "failure_probability" in spec:
+                    base[f"j{i}"] = float(spec["failure_probability"])
+                redundancy[f"j{i}"] = bool(spec.get("redundancy", False))
+
+        # Other components with canonical keys
+        mapping = {
+            "Gripper": "gripper",
+            "Controller": "controller",
+            "Power_Supply": "power_supply",
+            "Sensors": "sensors",
+            "Camera": "camera",
+        }
+        for json_key, canon in mapping.items():
+            if json_key in comps:
+                spec = comps[json_key]
+                if "failure_probability" in spec:
+                    base[canon] = float(spec["failure_probability"])
+                redundancy[canon] = bool(spec.get("redundancy", False))
+
+        # Keep everything for FT logic
+        self.hw_config = cfg
+        self.redundancy = redundancy
+
+        # Save for reuse
+        self.base_prob_per_minute = base
+        return base
 
 
 # 1) Load H5 pieces
@@ -592,4 +825,15 @@ print(summ["comp_usage"]      # active % and times per skill×component
 print(summ["joint_velocity"]  # velocity peaks per joint×skill
       .sort_values(["skill","total_vel_absmax"], ascending=[True, False])
       .head(20))
+
+base_p = an.load_base_probs_from_json("/Users/Phips1900/PhD/Research/RelAIBotiX/config_files/franka_config.json")
+
+joint_failure_table = an.assess_failure_from_bands(traces)
+print(joint_failure_table.sort_values("p_fail", ascending=False).head(10))
+gripper_table = an.assess_failure_for_gripper(traces)
+
+ft = joint_failure_table.copy()
+num_cols = ft.select_dtypes(include="number").columns
+ft[num_cols] = ft[num_cols].round(10)   # or fewer decimals
+ft.to_csv("failure_table.csv", index=False)
 
