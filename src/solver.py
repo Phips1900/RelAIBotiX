@@ -2,6 +2,8 @@
 import networkx as nx
 import numpy as np
 from scipy import linalg
+import re
+import math
 
 
 def solve_ft(ft_graph, ft_object):
@@ -133,10 +135,8 @@ def create_canonical_form(transition_matrix, state_list, absorbing_state_list):
     return q_matrix, r_matrix
 
 
-def hybrid_solver(ft_dict, mc_object, repeat_dict=None):
+def hybrid_solver(ft_dict, mc_object):
     """Hybrid risk model solver. Solves first all FTs, then the MC"""
-    if repeat_dict is None:
-        repeat_dict = {}
     ft_result_dict = {}
     mc_transitions = mc_object.get_transitions()
     for ft, ft_elements in ft_dict.items():
@@ -147,26 +147,67 @@ def hybrid_solver(ft_dict, mc_object, repeat_dict=None):
     for ft, ft_elements in ft_dict.items():
         ft_object = ft_elements[0]
         top_event = ft_object.get_top_event()
-        top_event_prob = ft_object.get_top_event_failure_prob()
-        ft_result_dict[top_event] = top_event_prob
+        ft_result_dict[top_event] = float(ft_object.get_top_event_failure_prob())
 
     for from_state, elements in mc_transitions.items():
-        for to_state, value in elements.items():
-            if value in ft_result_dict:
-                transition_prob = ft_result_dict[value]
-                mc_object.add_single_transition(from_state, to_state, transition_prob)
-            elif value == '1':
-                continue
-            else:
-                for top_event, prob in ft_result_dict.items():
-                    if ("1 - " + top_event) == value:
-                        prob = 1 - prob
-                        mc_object.add_single_transition(from_state, to_state, prob)
-                        if repeat_dict:
-                            for s, v in repeat_dict.items():
-                                if s == to_state:
-                                    prob = prob * v
-                                    mc_object.add_single_transition(from_state, to_state, prob)
+        for to_state, value in list(elements.items()):
+            prob = _eval_transition_expr(value, ft_result_dict)
+            elements[to_state] = prob
 
     b_matrix, t_matrix = solve_mc(mc_object)
     return b_matrix, t_matrix
+
+
+_NUM = r'(?P<num>[0-9]*\.?[0-9]+(?:[eE][-+]?\d+)?)'
+_TOK = r'(?P<tok>[A-Za-z_][A-Za-z0-9_]*)'
+
+
+def _eval_transition_expr(value, ft_result_dict):
+    """Evaluate simple expressions using FT results."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    if s == '1':
+        return 1.0
+
+    # direct token: "<TopEvent>"
+    if s in ft_result_dict:
+        return float(ft_result_dict[s])
+
+    # (1 - <TopEvent>)  or  1 - <TopEvent>
+    m = re.fullmatch(r'\(?\s*1\s*-\s*' + _TOK + r'\s*\)?', s)
+    if m:
+        tok = m.group('tok')
+        if tok not in ft_result_dict:
+            raise ValueError(f"Unknown FT token '{tok}' in '{s}'")
+        return 1.0 - float(ft_result_dict[tok])
+
+    # k * (1 - <TopEvent>)
+    m = re.fullmatch(_NUM + r'\s*\*\s*\(?\s*1\s*-\s*' + _TOK + r'\s*\)?', s)
+    if m:
+        k = float(m.group('num'))
+        tok = m.group('tok')
+        return k * (1.0 - float(ft_result_dict[tok]))
+
+    # (1 - <TopEvent>) * k
+    m = re.fullmatch(r'\(?\s*1\s*-\s*' + _TOK + r'\s*\)?\s*\*\s*' + _NUM, s)
+    if m:
+        tok = m.group('tok')
+        k = float(m.group('num'))
+        return k * (1.0 - float(ft_result_dict[tok]))
+
+    # k * <TopEvent>
+    m = re.fullmatch(_NUM + r'\s*\*\s*' + _TOK, s)
+    if m:
+        k = float(m.group('num'))
+        tok = m.group('tok')
+        return k * float(ft_result_dict[tok])
+
+    # <TopEvent> * k
+    m = re.fullmatch(_TOK + r'\s*\*\s*' + _NUM, s)
+    if m:
+        tok = m.group('tok')
+        k = float(m.group('num'))
+        return k * float(ft_result_dict[tok])
+
+    raise ValueError(f"Unrecognized transition expression: '{s}'")

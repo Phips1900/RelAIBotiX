@@ -12,6 +12,7 @@ class HybridReliabilityModel:
     """
     Orchestrates: Analyzer -> Fault Trees (per skill) -> DTMC -> external solver.
     """
+
     def __init__(self, name: str):
         self.name = name
         self.markov_chain: Optional[MarkovChain] = None
@@ -68,10 +69,10 @@ class HybridReliabilityModel:
     # -------------------- build from analyzer outputs --------------------
 
     def build_fault_trees_from_failure_table(
-        self,
-        failure_table: pd.DataFrame,
-        *,
-        redundancy_map: Optional[Dict[str, Dict[str, List[str]]]] = None
+            self,
+            failure_table: pd.DataFrame,
+            *,
+            redundancy_map: Optional[Dict[str, Dict[str, List[str]]]] = None
     ) -> None:
         """
         Create one FaultTree per skill from a tidy table with columns:
@@ -97,12 +98,12 @@ class HybridReliabilityModel:
             self.fault_trees.append(ft)
 
     def build_markov_chain_from_summary(
-        self,
-        summary: Dict[str, pd.DataFrame],
-        *,
-        failure_per_skill: Optional[Dict[str, float]] = None,   # if None, build symbolic DTMC (late binding)
-        done_alpha: float = 1.0,
-        canonical_order: Optional[List[str]] = None
+            self,
+            summary: Dict[str, pd.DataFrame],
+            *,
+            failure_per_skill: Optional[Dict[str, float]] = None,  # if None, build symbolic DTMC (late binding)
+            done_alpha: float = 1.0,
+            canonical_order: Optional[List[str]] = None
     ) -> None:
         """
         Build the DTMC using your analyzer summary (sequences & counts).
@@ -187,11 +188,11 @@ class HybridReliabilityModel:
         return out
 
     def compute_system_reliability(
-        self,
-        solver_module,
-        *,
-        repeat_dict: Optional[Dict] = None,
-        use_numeric_mc: bool = True,
+            self,
+            *,
+            repeat_dict: Optional[Dict] = None,
+            ft_dict=None,
+            use_numeric_mc: bool = True,
     ) -> Tuple[float, List[float], List[float]]:
         """
         Adaptor for solver.py.
@@ -203,14 +204,9 @@ class HybridReliabilityModel:
         if self.markov_chain is None:
             raise ValueError("Cannot compute reliability: Markov chain is not set.")
 
-        # (Optional) if your solver needs newly compiled numeric P, ensure we bound FT -> MC already.
-        # Otherwise, mc_object can be symbolic and the solver can bind probabilities itself from ft_dict.
-        ft_dict = self.as_solver_ft_dict()
-
-        absorption_prob, absorption_time = solver_module.hybrid_solver(
+        absorption_prob, absorption_time = hybrid_solver(
             ft_dict=ft_dict,
             mc_object=self.markov_chain,
-            repeat_dict=repeat_dict,
         )
 
         # Your solver seems to return row vectors; keep your original post-processing:
@@ -224,6 +220,7 @@ class MarkovChain:
     """
     MarkovChain class
     """
+
     def __init__(self, name: str):
         """constructor"""
         self.name = name
@@ -233,9 +230,9 @@ class MarkovChain:
         self.edges: Dict[str, List[str]] = {}
         # transitions
         self.transitions: Dict[str, Dict[str, Union[float, str]]] = {}
-        self.state_order: List[str] = []           # states + absorbing states order for P
-        self.P: Optional[np.ndarray] = None        # numeric transition matrix
-        self.pi0: Optional[np.ndarray] = None      # initial distribution over state_order (absorbing entries = 0)
+        self.state_order: List[str] = []  # states + absorbing states order for P
+        self.P: Optional[np.ndarray] = None  # numeric transition matrix
+        self.pi0: Optional[np.ndarray] = None  # initial distribution over state_order (absorbing entries = 0)
         # self.transition_matrix = []
 
     # --------------------- basic mutators ---------------------
@@ -365,12 +362,14 @@ class MarkovChain:
         Initial distribution over starting states from analyzer summary.
         Returns dict like {"Init": 0.59, "Move": 0.41}.
         """
-        seq_df = summary["sequences"]
-        R = int(summary["overall"].iloc[0]["n_runs"])
+        seq_df = summary["sequences"]  # columns: sequence, count, ...
         starts = seq_df["sequence"].str.split(" > ").str[0]
-        counts = starts.value_counts().to_dict()
-        # normalize
-        return {k: float(v) / max(R, 1) for k, v in counts.items()}
+        # sum counts per start token
+        start_counts = seq_df.assign(start=starts).groupby("start")["count"].sum()
+        R = int(summary["overall"].iloc[0]["n_runs"])
+        if R <= 0:
+            return {}
+        return {k: float(v) / R for k, v in start_counts.items()}
 
     @staticmethod
     def _place_exit_weights(summary: Dict[str, pd.DataFrame], *, done_alpha: float = 1.0) -> Dict[str, float]:
@@ -380,27 +379,24 @@ class MarkovChain:
         done_alpha=1.0 implements 1/(R+1) smoothing for the Done branch.
         """
         seq_df = summary["sequences"]
-        R = int(summary["overall"].iloc[0]["n_runs"])
         starts = seq_df["sequence"].str.split(" > ").str[0]
-        start_counts = starts.value_counts().to_dict()  # e.g., {"Init": 59, "Move": 41}
-        Z = R + done_alpha
-        w = {"Done": done_alpha / Z}
-        for k, v in start_counts.items():
-            w[k] = float(v) / Z
-        # normalize (numerical hygiene)
-        s = sum(w.values())
-        if s > 0:
-            for k in list(w.keys()):
-                w[k] /= s
+        start_counts = seq_df.assign(start=starts).groupby("start")["count"].sum()
+        R = int(summary["overall"].iloc[0]["n_runs"])
+        # Denominator ensures the weights sum to 1 when sum(counts)=R
+        Z = float(R + done_alpha)
+        w = {"Done": float(done_alpha) / Z}
+        for start, cnt in start_counts.items():
+            w[start] = float(cnt) / Z
+        # No extra normalization needed: (done_alpha + sum(cnt))/Z == 1
         return w
 
     def build_from_analyzer(
-        self,
-        summary: Dict[str, pd.DataFrame],
-        failure_per_skill: Dict[str, float] = None,
-        *,
-        canonical_order: Optional[List[str]] = None,
-        done_alpha: float = 1.0
+            self,
+            summary: Dict[str, pd.DataFrame],
+            failure_per_skill: Dict[str, float] = None,
+            *,
+            canonical_order: Optional[List[str]] = None,
+            done_alpha: float = 1.0
     ) -> None:
         """
         Auto-build the DTMC from analyzer summaries and per-skill failure probabilities.
@@ -419,36 +415,33 @@ class MarkovChain:
         """
         self.clear()
 
-        place_weights = self._place_exit_weights(summary, done_alpha=done_alpha)
-        if failure_per_skill is None:
-            self._build_symbolic_transitions(place_weights)
-        else:
-            self._build_numeric_transitions(failure_per_skill, place_weights)
-        self._compile_numeric()  # if symbolic, compiles to zeros; call compile_with_failures later
-
-        # 1) choose the linear order of skills
+        # 1) States & absorbing
         if canonical_order is None:
             canonical_order = self._most_frequent_sequence(summary["sequences"])
-        # If analyzer only saw ["Move","Pick","Carry","Place"], that's fine—no Init in the order.
         self.add_states(canonical_order)
         self.add_absorbing_states(add_done=True)
 
-        # 2) initial distribution over starting skills (Init vs Move proportion)
-        start_mix = self._start_skill_mixture(summary)  # dict
+        # 2) Initial distribution (Init vs Move mix, etc.)
+        start_mix = self._start_skill_mixture(summary)
         self._build_pi0(start_mix)
 
-        # 3) edges: linear chain + absorbing failures; Place also connects to Done and to start skills
+        # (optional) keep adjacency for inspection
         self._build_edges_for_linear_flow(start_mix_keys=list(start_mix.keys()))
 
-        # 4) transitions: numeric, gated by per-skill failure; Place gets exit weights
+        # 3) Place/last-skill exit weights (Done + restart mix)
         place_weights = self._place_exit_weights(summary, done_alpha=done_alpha)
-        self._build_numeric_transitions(failure_per_skill, place_weights)
 
-        # 5) compile numeric matrix (and enforce absorbing identity rows)
-        self._compile_numeric()
-
-        # final sanity
-        self._validate_rows()
+        # 4) Build transitions
+        if failure_per_skill is None:
+            # symbolic: strings like "Move_failure", "w*(1 - Place_failure)"
+            self._build_symbolic_transitions(place_weights)
+            self.P = None  # no numeric matrix yet; call compile_with_failures later
+        else:
+            # numeric: bind FT probabilities now
+            self._build_numeric_transitions(failure_per_skill, place_weights)
+            # 5) Compile numeric matrix & validate
+            self._compile_numeric()
+            self._validate_rows()
 
     # --------------------- internal helpers ---------------------
 
@@ -492,9 +485,9 @@ class MarkovChain:
             self.edges[a] = [a]
 
     def _build_numeric_transitions(
-        self,
-        failure_per_skill: Dict[str, float],
-        place_weights: Dict[str, float],
+            self,
+            failure_per_skill: Dict[str, float],
+            place_weights: Dict[str, float],
     ) -> None:
         """
         Fill `self.transitions` with numeric probabilities (still stored as dicts) and keep a parallel view for P.
@@ -759,12 +752,12 @@ class FaultTree:
     # ------------------- auto-create -------------------
 
     def auto_create_ft(
-        self,
-        basic_events: Dict[str, float],
-        top_event: str = "",
-        skill: str = "",
-        redundancy: bool = False,
-        redundant_components: Optional[Dict[str, List[str]]] = None,
+            self,
+            basic_events: Dict[str, float],
+            top_event: str = "",
+            skill: str = "",
+            redundancy: bool = False,
+            redundant_components: Optional[Dict[str, List[str]]] = None,
     ) -> bool:
         """
         Build a FT in one call.
@@ -795,6 +788,7 @@ class FaultTree:
         Raises ValueError on problems.
         """
         self._ensure_top_or()
+
         # DFS over top OR children
         def _is_leaf(x: str) -> bool:
             return x in self.basic_events
