@@ -48,7 +48,7 @@
     },
     "Sensors": {
       "failure_probability": 5.917e-08,
-      "redundancy": false
+      "redundancy": true
     }
   }
 }
