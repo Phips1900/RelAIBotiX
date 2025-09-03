@@ -3,7 +3,6 @@ import networkx as nx
 import numpy as np
 from scipy import linalg
 import re
-import math
 
 
 def solve_ft(ft_graph, ft_object):

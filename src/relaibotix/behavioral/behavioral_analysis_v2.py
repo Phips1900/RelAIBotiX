@@ -777,63 +777,63 @@ class BehavioralAnalyzer:
         return base
 
 
-# 1) Load H5 pieces
-with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_test_100.h5", "r") as f:
-    features_arr = f["features"][()]  # (N, 22)
-    labels = f["labels"][()]  # (N,)
-    timestamps = f["timestamps"][()]  # (N,)
-    feat_names = [n.decode() if hasattr(n, "decode") else str(n)
-                  for n in f["features"].attrs["feature_names"]]
-
-features_df = pd.DataFrame(features_arr)
-
-# 2) Load CSV with goal/final per run
-trials_csv = pd.read_csv(
-    "/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_trial_summary_100.csv")  # must have goal_x/y/z, final_x/y/z
-
-# 3) Analyze
-an = BehavioralAnalyzer(pos_success_tol=0.02)  # tune eps_abs/dc_thr/rms_thr/range_thr later if needed
-traces: List[RunTrace] = an.analyze(
-    features=features_df,
-    feature_names=feat_names,
-    labels=labels,
-    timestamps=timestamps,
-    trials_csv=trials_csv
-)
-
-print(len(traces), "runs")
-print(traces[0].skill_sequence)
-print(traces[3].success, traces[3].pos_error_norm)
-for se in traces[8].segments:
-    print(se.idx, se.name, se.duration)
-
-totals, skill_time, comp_active, comp_active_by_skill = an.summarize_timings(traces)
-
-print(totals)                 # {'total_run_time_sec': ..., 'n_runs': 10}
-print(skill_time.head())      # per-skill totals + averages
-print(comp_active.sort_values("total_active_time_sec", ascending=False).head())
-print(comp_active_by_skill.head())
-
-summ = an.summarize(traces)
-
-print(summ["sequences"])      # counts + %
-print(summ["overall"])        # n_runs, total time, success %
-print(summ["skill_time"])     # per-skill totals/averages
-print(summ["comp_usage"]      # active % and times per skill×component
-      .sort_values(["skill","active_pct_episodes"], ascending=[True, False])
-      .head(20))
-print(summ["joint_velocity"]  # velocity peaks per joint×skill
-      .sort_values(["skill","total_vel_absmax"], ascending=[True, False])
-      .head(20))
-
-base_p = an.load_base_probs_from_json("/Users/Phips1900/PhD/Research/RelAIBotiX/config_files/franka_config.json")
-
-joint_failure_table = an.assess_failure_from_bands(traces)
-print(joint_failure_table.sort_values("p_fail", ascending=False).head(10))
-gripper_table = an.assess_failure_for_gripper(traces)
-
-ft = joint_failure_table.copy()
-num_cols = ft.select_dtypes(include="number").columns
-ft[num_cols] = ft[num_cols].round(10)   # or fewer decimals
-ft.to_csv("failure_table.csv", index=False)
+# # 1) Load H5 pieces
+# with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_test_100.h5", "r") as f:
+#     features_arr = f["features"][()]  # (N, 22)
+#     labels = f["labels"][()]  # (N,)
+#     timestamps = f["timestamps"][()]  # (N,)
+#     feat_names = [n.decode() if hasattr(n, "decode") else str(n)
+#                   for n in f["features"].attrs["feature_names"]]
+#
+# features_df = pd.DataFrame(features_arr)
+#
+# # 2) Load CSV with goal/final per run
+# trials_csv = pd.read_csv(
+#     "/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_trial_summary_100.csv")  # must have goal_x/y/z, final_x/y/z
+#
+# # 3) Analyze
+# an = BehavioralAnalyzer(pos_success_tol=0.02)  # tune eps_abs/dc_thr/rms_thr/range_thr later if needed
+# traces: List[RunTrace] = an.analyze(
+#     features=features_df,
+#     feature_names=feat_names,
+#     labels=labels,
+#     timestamps=timestamps,
+#     trials_csv=trials_csv
+# )
+#
+# print(len(traces), "runs")
+# print(traces[0].skill_sequence)
+# print(traces[3].success, traces[3].pos_error_norm)
+# for se in traces[8].segments:
+#     print(se.idx, se.name, se.duration)
+#
+# totals, skill_time, comp_active, comp_active_by_skill = an.summarize_timings(traces)
+#
+# print(totals)                 # {'total_run_time_sec': ..., 'n_runs': 10}
+# print(skill_time.head())      # per-skill totals + averages
+# print(comp_active.sort_values("total_active_time_sec", ascending=False).head())
+# print(comp_active_by_skill.head())
+#
+# summ = an.summarize(traces)
+#
+# print(summ["sequences"])      # counts + %
+# print(summ["overall"])        # n_runs, total time, success %
+# print(summ["skill_time"])     # per-skill totals/averages
+# print(summ["comp_usage"]      # active % and times per skill×component
+#       .sort_values(["skill","active_pct_episodes"], ascending=[True, False])
+#       .head(20))
+# print(summ["joint_velocity"]  # velocity peaks per joint×skill
+#       .sort_values(["skill","total_vel_absmax"], ascending=[True, False])
+#       .head(20))
+#
+# base_p = an.load_base_probs_from_json("/Users/Phips1900/PhD/Research/RelAIBotiX/config_files/franka_config.json")
+#
+# joint_failure_table = an.assess_failure_from_bands(traces)
+# print(joint_failure_table.sort_values("p_fail", ascending=False).head(10))
+# gripper_table = an.assess_failure_for_gripper(traces)
+#
+# ft = joint_failure_table.copy()
+# num_cols = ft.select_dtypes(include="number").columns
+# ft[num_cols] = ft[num_cols].round(10)   # or fewer decimals
+# ft.to_csv("failure_table.csv", index=False)
 

@@ -1,10 +1,9 @@
 """This module provides the classes HybridReliabilityModel, MarkovChain, and FaultTree."""
 from __future__ import annotations
 from typing import Optional, List, Tuple, Dict, Union, Iterable
-from solver import *
+from relaibotix.reliability.solver import *
 import numpy as np
 import pandas as pd
-import math
 import copy
 
 

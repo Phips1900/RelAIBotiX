@@ -3,12 +3,11 @@ from typing import Dict, List, Optional, Union
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import copy
-import re
+import json
 import matplotlib.pyplot as plt
 
-from reliability_models import HybridReliabilityModel, MarkovChain, FaultTree
-from relaibotix_helper import *
+from relaibotix.reliability.reliability_models import HybridReliabilityModel, MarkovChain, FaultTree
+from relaibotix.relaibotix_helper import *
 
 
 # ----- Pull per-skill FT (top-event) probabilities -----
@@ -225,6 +224,5 @@ def write_report_json(
     outpath = Path(outpath)
     outpath.parent.mkdir(parents=True, exist_ok=True)
     with open(outpath, "w") as f:
-        import json;
         json.dump(payload, f, indent=2)
     return outpath

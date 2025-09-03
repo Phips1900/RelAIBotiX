@@ -1,0 +1,77 @@
+{
+  "name": "RelAIBotiX",
+  "system_failure_prob": 0.0003697920262893142,
+  "task_success_rate_percent": 88.0,
+  "components": [
+    {
+      "name": "j1",
+      "failure_prob": 3.577e-08
+    },
+    {
+      "name": "j2",
+      "failure_prob": 3.577e-08
+    },
+    {
+      "name": "j3",
+      "failure_prob": 3.577e-08
+    },
+    {
+      "name": "j4",
+      "failure_prob": 3.577e-08
+    },
+    {
+      "name": "j5",
+      "failure_prob": 3.577e-08
+    },
+    {
+      "name": "j6",
+      "failure_prob": 3.577e-08
+    },
+    {
+      "name": "j7",
+      "failure_prob": 3.577e-08
+    },
+    {
+      "name": "gripper",
+      "failure_prob": 7.344e-08
+    },
+    {
+      "name": "controller",
+      "failure_prob": 2.167e-10
+    },
+    {
+      "name": "power_supply",
+      "failure_prob": 6.674e-08
+    },
+    {
+      "name": "sensors",
+      "failure_prob": 5.917e-08
+    },
+    {
+      "name": "camera",
+      "failure_prob": 1.029e-09
+    }
+  ],
+  "skills": [
+    {
+      "name": "Carry",
+      "skill_failure_prob": 1.0715472279892347e-06
+    },
+    {
+      "name": "Init",
+      "skill_failure_prob": 5.236334510468755e-07
+    },
+    {
+      "name": "Move",
+      "skill_failure_prob": 7.837246087061785e-07
+    },
+    {
+      "name": "Pick",
+      "skill_failure_prob": 5.995497193519557e-07
+    },
+    {
+      "name": "Place",
+      "skill_failure_prob": 8.967616836374142e-07
+    }
+  ]
+}

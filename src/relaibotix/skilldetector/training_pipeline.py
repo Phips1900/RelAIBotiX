@@ -36,6 +36,7 @@ class LogEpochCallback(Callback):
                 items.append(f"{name} = {val}")
         self.logger.info(f"Epoch {epoch}: " + ", ".join(items))
 
+
 @hydra.main(version_base=None, config_path="../configs", config_name="training_config.yaml")
 def train(cfg: DictConfig):
     if not HydraConfig.initialized():

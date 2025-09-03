@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "relaibotix"
+version = "0.1.0"
+description = "RelAIBotiX"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{name = "Philipp"}]
+
+dependencies = []
+
+[project.optional-dependencies]
+full = [
+  "numpy","pandas","matplotlib","scipy","h5py","networkx","torch",
+  "torchmetrics","pytorch-lightning","tensorboard","tensorboardx",
+  "scikit-learn","seaborn","tqdm","omegaconf","hydra-core","pyyaml","fpdf",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+
+relaibotix-handler = "relaibotix.handler:main"

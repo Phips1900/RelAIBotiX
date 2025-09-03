@@ -17,7 +17,7 @@ AI-controlled robotic systems can introduce significant risks to both humans and
 RelAIBotiX presents a new methodology that enables dynamic and continuous reliability assessment, specifically tailored for robotic systems controlled by AI algorithms.
 
 ## Approach
-![RelAIBotiX Framework](figures/relaibotix_new.png)
+![RelAIBotiX Framework](artifacts/figures/relaibotix_new.png)
 The application of the RelAIBotiX framework requires three key steps:
 
 ### 1. Data Generation

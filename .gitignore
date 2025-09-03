@@ -1,0 +1,83 @@
+# -------------------------
+# OS / IDE
+# -------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+
+# -------------------------
+# Python build & caches
+# -------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.eggs/
+*.egg-info/
+dist/
+build/
+pip-wheel-metadata/
+.cache/
+.mypy_cache/
+.pytype/
+.pyre/
+.pytest_cache/
+
+# -------------------------
+# Virtual envs
+# -------------------------
+.venv/
+venv/
+env/
+.conda/
+conda-env/
+
+# -------------------------
+# Notebooks
+# -------------------------
+.ipynb_checkpoints/
+
+# -------------------------
+# Logs / coverage
+# -------------------------
+*.log
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# -------------------------
+# Hydra outputs
+# -------------------------
+outputs/
+multirun/
+
+# -------------------------
+# Artifacts & reports
+# -------------------------
+artifacts/*
+!artifacts/figures/
+!artifacts/checkpoints/
+eval_out/
+runs/
+tensorboard/
+lightning_logs/
+*.tfevents.*
+
+# -------------------------
+# Configs
+# -------------------------
+# keep all configs tracked
+!configs/
+!configs/**/*.yaml
+!configs/**/*.yml
+!configs/**/*.json
+
+
+# -------------------------
+# Env / secrets
+# -------------------------
+.env
+.env.*

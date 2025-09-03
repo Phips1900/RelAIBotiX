@@ -1,12 +1,10 @@
 """This module provides helper functions for RelAIbotiX."""
 from typing import Dict, Union, Any, List, Optional
-import os
-import json
-import numpy as np
-import pandas as pd
-from reliability_models import FaultTree, MarkovChain
 import math
-from graph import create_ft_graph
+import pandas as pd
+from relaibotix.reliability.reliability_models import HybridReliabilityModel, FaultTree, MarkovChain
+from relaibotix.reliability.graph import create_ft_graph
+
 
 # --- constants ---------------------------------------------------------------
 ALWAYS_ACTIVE = ["Controller", "Power_Supply", "Sensors", "Camera"]  # JSON keys
