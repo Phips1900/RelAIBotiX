@@ -16,7 +16,7 @@ callbacks:
     monitor: val_acc
     mode: max
     filename: "panda_cnn_trans_lpe_X_{epoch:02d}"
-    dirpath: "${hydra:runtime.cwd}/models/panda/ckpts"
+    dirpath: "${hydra:runtime.cwd}/src/skilldetector/panda/ckpts"
     save_top_k: 1
   log_epoch:
     _target_: training_pipeline.LogEpochCallback

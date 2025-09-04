@@ -37,7 +37,7 @@ class LogEpochCallback(Callback):
         self.logger.info(f"Epoch {epoch}: " + ", ".join(items))
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="training_config.yaml")
+@hydra.main(version_base=None, config_path="/Users/Phips1900/PhD/Research/RelAIBotiX/config_files/skilldetector", config_name="training_config.yaml")
 def train(cfg: DictConfig):
     if not HydraConfig.initialized():
         raise RuntimeError("HydraConfig not initialized")

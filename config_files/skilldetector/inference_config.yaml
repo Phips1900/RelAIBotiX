@@ -5,7 +5,7 @@ defaults:
   - robot: franka
   - _self_
 
-data_path: "${hydra:runtime.cwd}/dataset/inference/panda_X.h5"
+data_path: "${hydra:runtime.cwd}/datasets/panda_X.h5"
 structure:
   features_key: "features"
   labels_key: "labels"

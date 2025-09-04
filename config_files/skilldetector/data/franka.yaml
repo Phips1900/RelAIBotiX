@@ -1,5 +1,5 @@
 # Dataset configuration for Franka robots
-path: "${hydra:runtime.cwd}/dataset/train/panda_F_train.h5" #set path here starting from dataset.
+path: "${hydra:runtime.cwd}/datasets/panda_F_train.h5" #set path here starting from dataset.
 structure:
   features_key: "features"
   labels_key: "labels"

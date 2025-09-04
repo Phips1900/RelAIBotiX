@@ -1,10 +1,14 @@
 """This module provides helper functions for RelAIbotiX."""
 from typing import Dict, Union, Any, List, Optional
 import math
+import h5py
+import numpy as np
+from pathlib import Path
 import pandas as pd
+from omegaconf import OmegaConf, DictConfig
+from relaibotix.skilldetector.inference import run_inference
 from relaibotix.reliability.reliability_models import HybridReliabilityModel, FaultTree, MarkovChain
 from relaibotix.reliability.graph import create_ft_graph
-
 
 # --- constants ---------------------------------------------------------------
 ALWAYS_ACTIVE = ["Controller", "Power_Supply", "Sensors", "Camera"]  # JSON keys
@@ -166,6 +170,7 @@ def create_ft_dict(hybrid_model: Any) -> Dict[str, List[Any]]:
         ft_dict[ft.name] = [ft, ft_graph]
     return ft_dict
 
+
 def perform_sensitivity_analysis(hybrid_model: Any,
                                  robotic_system: Any,
                                  sensitivity_analysis_data: Dict[str, float]
@@ -214,3 +219,102 @@ def perform_sensitivity_analysis(hybrid_model: Any,
         sensitivity_analysis_data[component.name] = new_system_reliability
 
     return sensitivity_analysis_data
+
+
+def compare_predictions(y_true: np.ndarray, y_pred: np.ndarray, class_names=None):
+    """
+    Quick comparison of ground-truth vs predicted labels.
+    Returns a dict with accuracy, per-class accuracy, confusion matrix, and label order.
+
+    - y_true, y_pred: 1D integer arrays of same length (or longer; extra tail is ignored)
+    - class_names: optional list/tuple mapping label->name in the same order as 'labels'
+    """
+    if y_true is None:
+        raise ValueError("y_true is None — nothing to compare against.")
+    n = min(len(y_true), len(y_pred))
+    yt = np.asarray(y_true[:n], dtype=int)
+    yp = np.asarray(y_pred[:n], dtype=int)
+
+    labels = np.unique(np.concatenate([np.unique(yt), np.unique(yp)]))
+    label_to_idx = {lbl: i for i, lbl in enumerate(labels)}
+    K = len(labels)
+
+    # confusion matrix
+    cm = np.zeros((K, K), dtype=int)
+    for t, p in zip(yt, yp):
+        cm[label_to_idx[t], label_to_idx[p]] += 1
+
+    # overall accuracy
+    acc = (cm.diagonal().sum() / max(1, cm.sum())).item()
+
+    # per-class accuracy (a.k.a. recall)
+    support = cm.sum(axis=1)  # true instances per class
+    with np.errstate(divide='ignore', invalid='ignore'):
+        per_class_acc = np.where(support > 0, cm.diagonal() / support, np.nan)
+
+    # pretty names if provided
+    if class_names is not None and len(class_names) >= labels.max() + 1:
+        names = [class_names[l] for l in labels]
+    else:
+        names = [str(l) for l in labels]
+
+    # brief printout
+    print(f"[compare] N={n}, overall accuracy = {acc:.3f}")
+    for name, a, sup in zip(names, per_class_acc, support):
+        a_str = "nan" if np.isnan(a) else f"{a:.3f}"
+        print(f"  - {name:>10s}: acc={a_str} (support={int(sup)})")
+
+    return {
+        "accuracy": float(acc),
+        "per_class_accuracy": per_class_acc,
+        "support": support,
+        "labels": labels,
+        "class_names": names,
+        "confusion_matrix": cm,
+    }
+
+
+def filter_short_segments(y_pred: np.ndarray, *, min_len: int = 10, context: int = 1) -> np.ndarray:
+    """
+    Replace short segments (< min_len) with the surrounding majority label
+    when the majority label before and after the segment MATCH.
+
+    Parameters
+    ----------
+    y_pred : 1D int array of labels
+    min_len : minimum allowed length of a segment
+    context : number of samples to look before/after the segment
+
+    Returns
+    -------
+    np.ndarray : corrected labels (same shape as y_pred)
+    """
+    y = np.asarray(y_pred, dtype=int)
+    N = y.size
+    if N == 0:
+        return y
+
+    # find segment boundaries
+    starts = np.flatnonzero(np.r_[True, y[1:] != y[:-1]])
+    ends   = np.r_[starts[1:], N]
+
+    out = y.copy()
+    for s, e in zip(starts, ends):
+        if (e - s) >= min_len:
+            continue
+
+        left  = y[max(0, s - context): s]
+        right = y[e: min(N, e + context)]
+
+        if left.size == 0 or right.size == 0:
+            continue
+
+        # majority labels in context windows
+        lmaj = np.bincount(left).argmax()
+        rmaj = np.bincount(right).argmax()
+
+        # overwrite only if both sides agree
+        if lmaj == rmaj:
+            out[s:e] = lmaj
+
+    return out

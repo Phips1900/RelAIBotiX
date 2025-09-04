@@ -226,3 +226,74 @@ def write_report_json(
     with open(outpath, "w") as f:
         json.dump(payload, f, indent=2)
     return outpath
+
+
+def make_report_payload(
+    *,
+    name: str,
+    system_failure_prob: float,
+    task_success_rate_percent: float,
+    base_probs: Dict[str, float],
+    skill_pf: Dict[str, float],
+    summary: Dict[str, pd.DataFrame],
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Turn analyzer summary + reliability outputs into a JSONable dict."""
+    overall = summary["overall"].iloc[0].to_dict() if not summary["overall"].empty else {}
+    # Per-skill timing
+    skill_time_df = summary["skill_time"][["skill","total_time_sec","avg_time_per_episode_sec","avg_time_per_run_sec"]].copy()
+    # Component usage (per skill × component)
+    comp_usage_df = summary["comp_usage"][[
+        "skill","component","n_episodes_skill","n_active_episodes",
+        "active_pct_episodes","total_active_time_sec","avg_active_time_sec"
+    ]].copy()
+    # Velocity bands (per skill × joint)
+    vel_df = summary["velocity_bands"][[
+        "skill","component","time_low_sec","time_med_sec","time_high_sec",
+        "moving_time_sec","frac_low_of_moving","frac_med_of_moving","frac_high_of_moving"
+    ]].copy()
+
+    payload: Dict[str, Any] = {
+        "name": name,
+        "system_failure_prob": float(system_failure_prob),
+        "task_success_rate_percent": float(task_success_rate_percent),
+        "base_probs_per_min": {k: float(v) for k, v in (base_probs or {}).items()},
+        "skill_failure_probabilities": {k: float(v) for k, v in (skill_pf or {}).items()},
+        "overall": {
+            "n_runs": int(overall.get("n_runs", 0)),
+            "total_run_time_sec": float(overall.get("total_run_time_sec", 0.0)),
+            "success_rate_percent": float(overall.get("success_rate_percent", 0.0)),
+        },
+        "skill_time": skill_time_df.to_dict(orient="records"),
+        "component_usage": comp_usage_df.to_dict(orient="records"),
+        "velocity_bands": vel_df.to_dict(orient="records"),
+        "notes": notes or "",
+    }
+    return payload
+
+
+def write_report_json_extended(
+    *,
+    name: str,
+    system_failure_prob: float,
+    task_success_rate_percent: float,
+    base_probs: Dict[str, float],
+    skill_pf: Dict[str, float],
+    summary: Dict[str, pd.DataFrame],
+    outpath: Path,
+    notes: Optional[str] = None,
+) -> Path:
+    payload = make_report_payload(
+        name=name,
+        system_failure_prob=system_failure_prob,
+        task_success_rate_percent=task_success_rate_percent,
+        base_probs=base_probs,
+        skill_pf=skill_pf,
+        summary=summary,
+        notes=notes,
+    )
+    outpath = Path(outpath)
+    outpath.parent.mkdir(parents=True, exist_ok=True)
+    with open(outpath, "w") as f:
+        json.dump(payload, f, indent=2)
+    return outpath

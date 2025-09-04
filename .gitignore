@@ -81,3 +81,7 @@ lightning_logs/
 # -------------------------
 .env
 .env.*
+/src/relaibotix/skilldetector/datasets/panda_F_train.h5
+/src/relaibotix/skilldetector/datasets/panda_D_train.h5
+/src/relaibotix/skilldetector/tb_logs/panda_X/version_0/hparams.yaml
+/datasets/data.h5

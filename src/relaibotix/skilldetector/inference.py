@@ -1,199 +1,124 @@
-import os
-import time
-import logging
-from typing import Dict, List, Optional, Tuple, Union
+from pathlib import Path
+from typing import Sequence, Union, Optional
 
 import h5py
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
-from omegaconf import DictConfig
-import hydra
 
 
-# ----------------- utils -----------------
-def get_device(device_str: str) -> torch.device:
-    if device_str == "cuda" and torch.cuda.is_available():
-        return torch.device("cuda")
-    elif device_str == "mps" and torch.backends.mps.is_available():
-        return torch.device("mps")
-    else:
-        logging.info(f"Device '{device_str}' unavailable; using 'cpu'.")
-        return torch.device("cpu")
-
-
-def _strip_prefix_in_state_dict(sd: Dict[str, torch.Tensor], prefixes=("model.", "net.", "module.")) -> Dict[str, torch.Tensor]:
-    """Handle checkpoints saved by Lightning/DataParallel that prefix param names."""
-    out = {}
-    for k, v in sd.items():
-        nk = k
-        for p in prefixes:
-            if nk.startswith(p):
-                nk = nk[len(p):]
-        out[nk] = v
+def aggregate_predictions(sliding_preds: np.ndarray) -> np.ndarray:
+    n_windows, W = sliding_preds.shape
+    N = n_windows + W - 1
+    out = np.empty(N, dtype=sliding_preds.dtype)
+    for j in range(N):
+        i0 = max(0, j - W + 1)
+        i1 = min(j, n_windows - 1)
+        votes = [sliding_preds[i, j - i] for i in range(i0, i1 + 1)]
+        out[j] = np.argmax(np.bincount(votes))
     return out
 
 
-# ----------------- models -----------------
-def load_model(model_type: str, checkpoint_path: str, window_size: int, num_features: int, num_classes: int):
-    if model_type == "cnn_transformer":
-        model = CNNTransformer(window_size=window_size, num_features=num_features, num_classes=num_classes).float()
-    elif model_type == "cnn_lstm":
-        model = CNNLSTM(window_size=window_size, num_features=num_features, num_classes=num_classes).float()
-    elif model_type == "lstm_transformer":
-        model = LSTMTransformer(window_size=window_size, num_features=num_features, num_classes=num_classes).float()
-    else:
-        raise ValueError(f"Unknown model type: {model_type}")
+# ---- minimal dataset for sliding-window inference ----
+class SlidingWindowDataset(Dataset):
+    def __init__(self, X: np.ndarray, window_size: int, stride: int = 1):
+        self.X = X.astype(np.float32, copy=False)
+        self.W = int(window_size)
+        self.stride = int(stride)
+        self.n = max(0, (len(X) - self.W) // self.stride + 1)
 
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
-    state = ckpt.get("state_dict", ckpt)
-    state = _strip_prefix_in_state_dict(state)
-    missing, unexpected = model.load_state_dict(state, strict=False)
-    if missing or unexpected:
-        logging.warning(f"load_state_dict: missing={missing}, unexpected={unexpected}")
-    logging.info(f"Loaded {model_type} from {checkpoint_path}")
+    def __len__(self) -> int:
+        return self.n
+
+    def __getitem__(self, idx: int) -> torch.Tensor:
+        i = idx * self.stride
+        return torch.from_numpy(self.X[i:i + self.W, :])  # [W, D]
+
+
+# ---- model loader (no inference_engine) ----
+def load_model(model_type: str, checkpoint_path: Union[str, Path],
+               window_size: int, num_features: int, num_classes: int) -> torch.nn.Module:
+    # import your model classes directly
+    if model_type == "cnn_transformer":
+        from .models.cnn_transformer import CNNTransformer as Model
+        model = Model(window_size=window_size, num_features=num_features, num_classes=num_classes).float()
+    elif model_type == "cnn_lstm":
+        from .models.cnn_lstm import CNNLSTM as Model
+        model = Model(window_size=window_size, num_features=num_features, num_classes=num_classes).float()
+    elif model_type == "lstm_transformer":
+        from .models.lstm_transformer import LSTMTransformer as Model
+        model = Model(window_size=window_size, num_features=num_features, num_classes=num_classes).float()
+    else:
+        raise ValueError(f"Unknown model_type: {model_type}")
+
+    ckpt = torch.load(str(checkpoint_path), map_location="cpu", weights_only=False)
+    state = ckpt.get("state_dict", ckpt)  # handle lightning or plain
+    model.load_state_dict(state, strict=False)
     return model
 
 
-# ----------------- data -----------------
-def _load_h5_features(h5_path: str, feature_columns: Optional[List[str]] = None,
-                      feature_ds: str = "features") -> Tuple[np.ndarray, List[str]]:
-    """
-    Returns: (features[N,D], feature_names[D])
-    If feature_columns is given, will select & reorder columns by matching names found in H5 attrs 'feature_names'.
-    """
-    with h5py.File(h5_path, "r") as f:
-        feats = f[feature_ds][()]  # (N, D_all)
-        names_attr = f[feature_ds].attrs.get("feature_names", [])
-        feat_names = [(n.decode() if hasattr(n, "decode") else str(n)) for n in names_attr]
-
-    if feature_columns:
-        # map requested names to indices in the file
-        name_to_idx = {n: i for i, n in enumerate(feat_names)}
-        missing = [c for c in feature_columns if c not in name_to_idx]
-        if missing:
-            raise ValueError(f"Requested feature columns not found in H5: {missing}")
-        idxs = [name_to_idx[c] for c in feature_columns]
-        feats = feats[:, idxs]
-        feat_names = [feat_names[i] for i in idxs]
-
-    feats = feats.astype(np.float32, copy=False)
-    return feats, feat_names
-
-
-class SlidingWindowDataset(Dataset):
-    """
-    Produces overlapping windows of shape [W, D] with stride S (default 1).
-    If N is total timesteps, len(dataset) = N - W + 1 when stride=1.
-    """
-    def __init__(self, features: np.ndarray, window_size: int, stride: int = 1):
-        self.X = features  # (N, D)
-        self.W = int(window_size)
-        self.S = int(stride)
-        self.N = features.shape[0]
-        if self.N < self.W:
-            raise ValueError(f"Not enough samples N={self.N} for window_size={self.W}")
-        self.n_windows = 1 + (self.N - self.W) // self.S
-
-    def __len__(self):
-        return self.n_windows
-
-    def __getitem__(self, idx):
-        i0 = idx * self.S
-        i1 = i0 + self.W
-        win = self.X[i0:i1]  # (W, D)
-        return torch.from_numpy(win)
-
-
-# ----------------- voting -----------------
-def aggregate_predictions(sliding_preds: np.ndarray) -> np.ndarray:
-    """
-    Majority-vote aggregation from sliding window predictions (n_windows, window_size)
-    -> (N,) labels where N = n_windows + window_size - 1 (stride=1).
-    """
-    n_windows, W = sliding_preds.shape
-    N = n_windows + W - 1
-    final = np.empty(N, dtype=sliding_preds.dtype)
-    for j in range(N):
-        i_start = max(0, j - W + 1)
-        i_end = min(j, n_windows - 1)
-        votes = [sliding_preds[i, j - i] for i in range(i_start, i_end + 1)]
-        final[j] = np.argmax(np.bincount(votes))
-    return final
-
-
-# ----------------- writing labels -----------------
-def write_labels_to_h5(h5_path: str, labels: np.ndarray, *, overwrite_labels: bool = False,
-                       dataset_name_if_exists: str = "labels_pred") -> str:
-    """
-    Writes labels as int64 to H5 file. If 'labels' exists and overwrite_labels=False,
-    creates/overwrites 'labels_pred' instead.
-    Returns the dataset name used.
-    """
-    labels = labels.astype(np.int64, copy=False)
+def _write_labels_to_h5(h5_path: Union[str, Path], labels: np.ndarray,
+                        *, dataset_name: str = "labels_pred", overwrite: bool = True) -> str:
+    h5_path = Path(h5_path)
     with h5py.File(h5_path, "a") as f:
-        target_name = "labels"
-        if "labels" in f and not overwrite_labels:
-            target_name = dataset_name_if_exists
-            if target_name in f:
-                del f[target_name]
-        elif "labels" in f and overwrite_labels:
-            del f["labels"]
-        dset = f.create_dataset(target_name, data=labels, compression="gzip")
-    logging.info(f"Wrote labels to '{h5_path}:{target_name}' (len={len(labels)})")
-    return target_name
+        if dataset_name in f and overwrite:
+            del f[dataset_name]
+        if dataset_name not in f:
+            f.create_dataset(dataset_name, data=labels.astype(np.int64))
+    return dataset_name
 
 
-# ----------------- Hydra entry -----------------
-@hydra.main(config_path="../configs", config_name="inference_config", version_base=None)
-def infer(cfg: DictConfig):
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("skill_detector")
+def run_inference(
+        *,
+        h5_path: Union[str, Path],
+        checkpoint_path: Union[str, Path],
+        model_type: str,
+        window_size: int,
+        feature_columns: Sequence[int],
+        num_classes: int,
+        batch_size: int = 64,
+        device: str = "cpu",  # "cuda"/"mps"/"cpu"
+        feature_ds: str = "features",
+        out_labels_name: str = "labels_pred",
+        stride: int = 1,
+) -> str:
+    """Reads features from H5, runs model, majority-votes, writes `labels_pred`. Returns dataset name."""
+    h5_path = Path(h5_path)
 
-    device = get_device(cfg.device)
-    logger.info(f"Using device: {device}")
+    # 1) features by index (simple & robust)
+    with h5py.File(h5_path, "r") as f:
+        X = f[feature_ds][()]  # (N, D)
+    cols = [int(c) for c in feature_columns]
+    D = X.shape[1]
+    bad = [i for i in cols if i < 0 or i >= D]
+    if bad:
+        raise ValueError(f"indices out of range for D={D}: {bad}")
+    feats = X[:, cols].astype(np.float32, copy=False)  # (N, len(cols))
 
-    # 1) Load features (subset to the configured feature names order)
-    feats, used_feat_names = _load_h5_features(cfg.data_path, feature_columns=cfg.feature_columns,
-                                               feature_ds=getattr(cfg, "feature_dataset", "features"))
-    N, D = feats.shape
-    logger.info(f"Loaded features: N={N}, D={D}")
+    # 2) model
+    dev = torch.device("cuda" if device == "cuda" and torch.cuda.is_available()
+                       else "mps" if device == "mps" and torch.backends.mps.is_available() else "cpu")
+    model = load_model(model_type, checkpoint_path, window_size, feats.shape[1], num_classes).to(dev).eval()
 
-    # 2) Load model (select by robot/type from Hydra cfg)
-    ckpt_path, model_type = model_select_by_type(cfg.robot, cfg.model_selector)
-    model = load_model(model_type, ckpt_path, cfg.window_size, num_features=D, num_classes=cfg.num_classes)
-    model.eval().to(device)
+    # 3) sliding-window inference
+    ds = SlidingWindowDataset(feats, window_size=window_size, stride=stride)
+    if len(ds) == 0:
+        raise ValueError("Not enough samples for the chosen window_size.")
+    dl = DataLoader(ds, batch_size=batch_size, shuffle=False)
 
-    # 3) Build sliding-window dataset & loader
-    stride = int(getattr(cfg, "stride", 1))
-    ds = SlidingWindowDataset(feats, window_size=cfg.window_size, stride=stride)
-    dl = DataLoader(ds, batch_size=cfg.batch_size, shuffle=False, num_workers=getattr(cfg, "num_workers", 0))
-    logger.info(f"Windows: {len(ds)} (W={cfg.window_size}, stride={stride})")
-
-    # 4) Inference over windows
-    all_window_preds: List[np.ndarray] = []
-    t0 = time.time()
+    preds_windows = []
     with torch.no_grad():
         for batch in dl:
-            batch = batch.float().to(device)        # [B, W, D]
-            logits = model(batch)                    # your models should return [B, W, C]
-            if logits.ndim == 2:
-                # some models might output [B, C] per window; then repeat per-timestep or adjust your model
-                raise RuntimeError("Expected model to output [B, W, C]; got [B, C]. Please adapt.")
-            preds = torch.argmax(logits, dim=-1)     # [B, W]
-            all_window_preds.append(preds.cpu().numpy())
-    dt = time.time() - t0
-    logger.info(f"Inference took {dt:.3f}s, {dt/max(len(dl),1):.5f}s/batch")
+            x = batch.to(dev)  # [B, W, D]
+            logits = model(x)  # expect [B, W, C]
+            if logits.dim() != 3:
+                raise RuntimeError(f"Unsupported model output shape: {tuple(logits.shape)}; expected [B, W, C].")
+            preds = torch.argmax(logits, dim=-1)  # [B, W]
+            preds_windows.append(preds.cpu().numpy())
+    sliding_preds = np.concatenate(preds_windows, axis=0)  # [n_windows, W]
 
-    if not all_window_preds:
-        raise RuntimeError("No predictions produced.")
-    sliding_preds = np.concatenate(all_window_preds, axis=0)  # (n_windows, W)
+    # 4) majority vote to per-timestep labels
+    flat_preds = aggregate_predictions(sliding_preds)  # [N]
 
-    # 5) Majority voting -> per-timestep labels
-    flat_predictions = aggregate_predictions(sliding_preds)   # (N,) when stride=1
-
-    # 6) Write back to H5
-    used_ds = write_labels_to_h5(cfg.data_path, flat_predictions,
-                                 overwrite_labels=getattr(cfg, "overwrite_labels", False),
-                                 dataset_name_if_exists=getattr(cfg, "alt_label_name", "labels_pred"))
-    logger.info(f"Done. Labels stored in dataset '{used_ds}'.")
+    # 5) write labels_pred
+    return _write_labels_to_h5(h5_path, flat_preds, dataset_name=out_labels_name, overwrite=True)
