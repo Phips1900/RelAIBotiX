@@ -17,7 +17,7 @@ AI-controlled robotic systems can introduce significant risks to both humans and
 RelAIBotiX presents a new methodology that enables dynamic and continuous reliability assessment, specifically tailored for robotic systems controlled by AI algorithms.
 
 ## Approach
-![RelAIBotiX Framework](artifacts/figures/relaibotix_new.png)
+![RelAIBotiX Framework](artifacts/figures/concept.png)
 The application of the RelAIBotiX framework requires three key steps:
 
 ### 1. Data Generation
@@ -81,11 +81,20 @@ python relaibotix_handler.py \
 
 > ⚠ **Note:** The **Skill Detector** module, which identifies robotic behaviors from time-series data, is currently maintained in a separate repository. It will be integrated into **RelAIBotiX** soon. Until then, a placeholder method is used. Future updates will provide seamless integration, allowing full automation of the skill detection and analysis process.
 
+-------
 ## Citation
 ```bibtex
-
+@INPROCEEDINGS{11128348,
+  author    = {Grimmeisen, Philipp and Golwalkar, Rucha and Sautter, Friedrich and Morozov, Andrey},
+  booktitle = {2025 IEEE International Conference on Robotics and Automation (ICRA)},
+  title     = {RelAIBotiX: Reliability Assessment for AI-Controlled Robotic Systems},
+  year      = {2025},
+  pages     = {5496-5503},
+  keywords  = {Analytical models;Sensitivity analysis;Heuristic algorithms;Computational modeling;Robot sensing systems;Data models;Hardware;Numerical models;Software reliability;Reliability},
+  doi       = {10.1109/ICRA55743.2025.11128348}
+}
 ```
-
+---
 
 ## License
 This project is licensed under the MIT License.

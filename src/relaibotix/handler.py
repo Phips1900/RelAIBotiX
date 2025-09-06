@@ -6,9 +6,14 @@ from pathlib import Path
 from relaibotix.behavioral.behavioral_analysis_v2 import *
 from relaibotix.evaluation.evaluation import *
 from relaibotix.evaluation.pdf_handler import *
+from relaibotix.reliability.prism import *
 
 H5 = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_infer_10.h5")
 CKPT = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/checkpoints/panda_cnn_trans_lpe_F_v1_epoch=17.ckpt")
+out_dir = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/reports/infer")
+out_dir.mkdir(parents=True, exist_ok=True)
+out_dir_prism = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/prism")
+out_dir_prism.mkdir(parents=True, exist_ok=True)
 
 with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_infer_10.h5", "r") as f:
     features_arr = f["features"][()]  # (N, 22)
@@ -113,11 +118,19 @@ hybrid_model.add_markov_chain(mc)
 
 system_reliability, absorption_prob, absorption_time = hybrid_model.compute_system_reliability(ft_dict=ft_dict)
 
+mc = hybrid_model.get_markov_chain()
+prism_model, prism_props = write_prism_and_props(
+    mc,
+    out_basename=out_dir_prism / "relaibotix_dtmc",
+    model_name="RelAIBotiX",
+    precision=12,
+)
+print(f"[PRISM] wrote {prism_model} and {prism_props}")
+
 print(system_reliability)
 print(absorption_prob)
 
-out_dir = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/reports/infer")
-out_dir.mkdir(parents=True, exist_ok=True)
+
 
 # 1) Per-skill failure probs (from solved FTs)
 skill_pf = skill_failure_probs_from_fts(hybrid_model)

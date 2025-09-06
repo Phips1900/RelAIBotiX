@@ -13,4 +13,9 @@ try:
 except Exception:
     pass
 
+try:
+    from .prism import *  # noqa: F401,F403
+except Exception:
+    pass
+
 __all__ = ["HybridReliabilityModel", "MarkovChain", "FaultTree"]
