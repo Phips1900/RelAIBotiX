@@ -49,7 +49,6 @@ def create_pdf_from_json_and_plots(json_file, plot_files, filename='output.pdf')
     pdf.set_font('Arial', '', 14)
     pdf.cell(0, 10, f"{data['task_success_rate_percent']:}", ln=True)
 
-
     pdf.ln(10)  # Line break
 
     # Add Components Information

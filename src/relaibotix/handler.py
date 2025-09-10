@@ -10,12 +10,12 @@ from relaibotix.reliability.prism import *
 
 H5 = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_infer_10.h5")
 CKPT = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/checkpoints/panda_cnn_trans_lpe_F_v1_epoch=17.ckpt")
-out_dir = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/reports/franka")
+out_dir = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/reports/franka_slow")
 out_dir.mkdir(parents=True, exist_ok=True)
 out_dir_prism = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/prism")
 out_dir_prism.mkdir(parents=True, exist_ok=True)
 
-with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_slow_20.h5", "r") as f:
+with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka/franka_slow_10.h5", "r") as f:
     features_arr = f["features"][()]  # (N, 22)
     labels = f["labels"][()]  # (N,)
     #labels_pred = f["labels_pred"][()]  # (N,)
@@ -57,7 +57,7 @@ features_df = pd.DataFrame(features_arr)
 
 # 2) Load CSV with goal/final per run
 trials_csv = pd.read_csv(
-     "/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_slow_summary_20.csv")
+    "/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka/franka_slow_summary_10.csv")
 
 # 3) Analyze
 an = BehavioralAnalyzer(pos_success_tol=0.02)  # tune eps_abs/dc_thr/rms_thr/range_thr later if needed
@@ -166,6 +166,16 @@ p_2 = plot_sensitivity_outcomes_spider_failure(
 )
 plots.append(p_2)
 
+vel_plots = plot_velocity_bands_per_skill(velocity_bands=summary.get("velocity_bands", {}), outpath=out_dir)
+eff_plots = plot_effort_bands_per_skill(effort_bands=summary.get("effort_bands", {}), outpath=out_dir)
+
+for plot in vel_plots:
+    plots.append(plot)
+
+if eff_plots:
+    for plot in eff_plots:
+        plots.append(plot)
+
 # # 5) JSON payload and PDF
 # report_json = write_report_json(
 #     name="RelAIBotiX",
@@ -180,13 +190,13 @@ plots.append(p_2)
 
 
 report_json = write_report_json_extended(
-    name="RelAIBotiX - Franka",
+    name="RelAIBotiX - Franka Slow 10",
     system_failure_prob=system_reliability,
     task_success_rate_percent=task_success,
     base_probs=base_p_per_min,
     skill_pf=skill_pf,
     summary=summary,
-    outpath=out_dir / "report_franka_slow.json",
+    outpath=out_dir / "report_franka_slow_10.json",
 )
 
-create_pdf_extended(str(report_json), [str(p) for p in plots], filename=str(out_dir / "report_franka_slow.pdf"))
+create_pdf_extended(str(report_json), [str(p) for p in plots], filename=str(out_dir / "report_franka_slow_10.pdf"))

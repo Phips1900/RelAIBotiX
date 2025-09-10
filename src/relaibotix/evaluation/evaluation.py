@@ -30,14 +30,14 @@ def task_success_rate_from_summary(summary: Dict[str, pd.DataFrame]) -> float:
 
 
 def plot_skill_failures_separate(
-    ft_failure: Dict[str, float],
-    absorb_failure: Dict[str, float],
-    out_ft: Union[str, Path],
-    out_absorb: Union[str, Path],
-    *,
-    order: Optional[list] = None,
-    title_ft: str = "Per-skill failure probability (FT top-event)",
-    title_abs: str = "Per-skill failure probability (Absorbing / DTMC)",
+        ft_failure: Dict[str, float],
+        absorb_failure: Dict[str, float],
+        out_ft: Union[str, Path],
+        out_absorb: Union[str, Path],
+        *,
+        order: Optional[list] = None,
+        title_ft: str = "Per-skill failure probability (FT top-event)",
+        title_abs: str = "Per-skill failure probability (Absorbing / DTMC)",
 ) -> tuple[Path, Path]:
     import numpy as np
     import matplotlib.pyplot as plt
@@ -60,7 +60,9 @@ def plot_skill_failures_separate(
     #ax.set_xticklabels(skills, rotation=20, ha="right")
     ax.grid(axis="y", linestyle=":", alpha=0.6)
     fig.tight_layout()
-    out_ft = Path(out_ft); fig.savefig(out_ft, bbox_inches="tight", dpi=150); plt.close(fig)
+    out_ft = Path(out_ft);
+    fig.savefig(out_ft, bbox_inches="tight", dpi=150);
+    plt.close(fig)
 
     # Absorbing-only
     ab_vals = [float(absorb_failure.get(s, np.nan)) for s in skills]
@@ -72,7 +74,9 @@ def plot_skill_failures_separate(
     # ax.set_xticklabels(skills, rotation=20, ha="right")
     ax.grid(axis="y", linestyle=":", alpha=0.6)
     fig.tight_layout()
-    out_absorb = Path(out_absorb); fig.savefig(out_absorb, bbox_inches="tight", dpi=150); plt.close(fig)
+    out_absorb = Path(out_absorb)
+    fig.savefig(out_absorb, bbox_inches="tight", dpi=150)
+    plt.close(fig)
 
     return out_ft, out_absorb
 
@@ -229,28 +233,29 @@ def write_report_json(
 
 
 def make_report_payload(
-    *,
-    name: str,
-    system_failure_prob: float,
-    task_success_rate_percent: float,
-    base_probs: Dict[str, float],
-    skill_pf: Dict[str, float],
-    summary: Dict[str, pd.DataFrame],
-    notes: Optional[str] = None,
+        *,
+        name: str,
+        system_failure_prob: float,
+        task_success_rate_percent: float,
+        base_probs: Dict[str, float],
+        skill_pf: Dict[str, float],
+        summary: Dict[str, pd.DataFrame],
+        notes: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Turn analyzer summary + reliability outputs into a JSONable dict."""
     overall = summary["overall"].iloc[0].to_dict() if not summary["overall"].empty else {}
     # Per-skill timing
-    skill_time_df = summary["skill_time"][["skill","total_time_sec","avg_time_per_episode_sec","avg_time_per_run_sec"]].copy()
+    skill_time_df = summary["skill_time"][
+        ["skill", "total_time_sec", "avg_time_per_episode_sec", "avg_time_per_run_sec"]].copy()
     # Component usage (per skill × component)
     comp_usage_df = summary["comp_usage"][[
-        "skill","component","n_episodes_skill","n_active_episodes",
-        "active_pct_episodes","total_active_time_sec","avg_active_time_sec"
+        "skill", "component", "n_episodes_skill", "n_active_episodes",
+        "active_pct_episodes", "total_active_time_sec", "avg_active_time_sec"
     ]].copy()
     # Velocity bands (per skill × joint)
     vel_df = summary["velocity_bands"][[
-        "skill","component","time_low_sec","time_med_sec","time_high_sec",
-        "moving_time_sec","frac_low_of_moving","frac_med_of_moving","frac_high_of_moving"
+        "skill", "component", "time_low_sec", "time_med_sec", "time_high_sec",
+        "moving_time_sec", "frac_low_of_moving", "frac_med_of_moving", "frac_high_of_moving"
     ]].copy()
 
     payload: Dict[str, Any] = {
@@ -273,15 +278,15 @@ def make_report_payload(
 
 
 def write_report_json_extended(
-    *,
-    name: str,
-    system_failure_prob: float,
-    task_success_rate_percent: float,
-    base_probs: Dict[str, float],
-    skill_pf: Dict[str, float],
-    summary: Dict[str, pd.DataFrame],
-    outpath: Path,
-    notes: Optional[str] = None,
+        *,
+        name: str,
+        system_failure_prob: float,
+        task_success_rate_percent: float,
+        base_probs: Dict[str, float],
+        skill_pf: Dict[str, float],
+        summary: Dict[str, pd.DataFrame],
+        outpath: Path,
+        notes: Optional[str] = None,
 ) -> Path:
     payload = make_report_payload(
         name=name,
@@ -297,3 +302,122 @@ def write_report_json_extended(
     with open(outpath, "w") as f:
         json.dump(payload, f, indent=2)
     return outpath
+
+
+def _order_skills(df):
+    # Keep your order if you have one; otherwise alphabetical
+    return sorted(df["skill"].unique(), key=lambda x: str(x))
+
+
+def plot_velocity_bands_per_skill(velocity_bands: pd.DataFrame, outpath: Union[str, Path],
+                                  title_prefix: str = "Velocity Bands") -> list[Path]:
+    plots = []
+    skills = _order_skills(velocity_bands)
+    for sk in skills:
+        sub = velocity_bands[velocity_bands["skill"] == sk].copy()
+        if sub.empty:
+            continue
+        # normalize to fractions (safeguard)
+        mt = sub["moving_time_sec"].replace(0, np.nan)
+        sub["frac_low"] = sub["time_low_sec"] / mt
+        sub["frac_med"] = sub["time_med_sec"] / mt
+        sub["frac_high"] = sub["time_high_sec"] / mt
+        sub[["frac_low", "frac_med", "frac_high"]] = sub[["frac_low", "frac_med", "frac_high"]].fillna(0.0)
+
+        joints = sub["component"].tolist()
+        x = np.arange(len(joints))
+
+        fig, ax = plt.subplots(figsize=(10, 4))
+        b1 = ax.bar(x, sub["frac_low"].values, label="Low")
+        b2 = ax.bar(x, sub["frac_med"].values, bottom=sub["frac_low"].values, label="Med")
+        b3 = ax.bar(x, sub["frac_high"].values,
+                    bottom=(sub["frac_low"].values + sub["frac_med"].values), label="High")
+
+        # annotate moving time on top
+        for xi, mtv in zip(x, sub["moving_time_sec"].values):
+            ax.text(xi, 1.02, f"{mtv:.1f}s", ha="center", va="bottom", fontsize=9, rotation=0)
+
+        ax.set_title(f"{title_prefix} — {sk}")
+        ax.set_xticks(x)
+        ax.set_xticklabels(joints)
+        ax.set_ylim(0, 1.1)
+        ax.set_ylabel("Fraction of moving time")
+        ax.legend(loc="upper right")
+        plt.tight_layout()
+        out_fig = Path(outpath, f"velocity_bands_{sk.replace(' ', '_')}.png")
+        fig.savefig(out_fig, bbox_inches="tight", dpi=150)
+        plt.close(fig)
+        plots.append(out_fig)
+    return plots
+
+
+def plot_effort_bands_per_skill(effort_bands: pd.DataFrame, outpath: Union[str, Path],
+                                title_prefix: str = "Effort Bands") -> list[Path]:
+
+    plots = []
+    if effort_bands.empty:
+        print("effort_bands is empty.")
+        return plots
+
+    skills = _order_skills(effort_bands)
+    for sk in skills:
+        sub = effort_bands[effort_bands["skill"] == sk].copy()
+        if sub.empty:
+            continue
+        eat = sub["eff_active_time_sec"].replace(0, np.nan)
+        sub["frac_low"] = sub["eff_time_low_sec"] / eat
+        sub["frac_med"] = sub["eff_time_med_sec"] / eat
+        sub["frac_high"] = sub["eff_time_high_sec"] / eat
+        sub[["frac_low", "frac_med", "frac_high"]] = sub[["frac_low", "frac_med", "frac_high"]].fillna(0.0)
+
+        joints = sub["component"].tolist()
+        x = np.arange(len(joints))
+
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.bar(x, sub["frac_low"].values, label="Low")
+        ax.bar(x, sub["frac_med"].values, bottom=sub["frac_low"].values, label="Med")
+        ax.bar(x, sub["frac_high"].values,
+               bottom=(sub["frac_low"].values + sub["frac_med"].values), label="High")
+
+        for xi, eatv in zip(x, sub["eff_active_time_sec"].values):
+            ax.text(xi, 1.02, f"{eatv:.1f}s", ha="center", va="bottom", fontsize=9)
+
+        ax.set_title(f"{title_prefix} — {sk}")
+        ax.set_xticks(x)
+        ax.set_xticklabels(joints)
+        ax.set_ylim(0, 1.1)
+        ax.set_ylabel("Fraction of effort-active time")
+        ax.legend(loc="upper right")
+        plt.tight_layout()
+        out_fig = Path(outpath, f"effort_bands_{sk.replace(' ', '_')}.png")
+        fig.savefig(out_fig, bbox_inches="tight", dpi=150)
+        plt.close(fig)
+        plots.append(out_fig)
+    return plots
+
+# def plot_active_time_compare(velocity_bands: pd.DataFrame, effort_bands: pd.DataFrame,
+#                              title_prefix: str = "Active Time: Velocity vs Effort"):
+#     if velocity_bands.empty or effort_bands.empty:
+#         print("Need both velocity_bands and effort_bands.")
+#         return
+#
+#     # Merge on skill,component
+#     v = velocity_bands[["skill", "component", "moving_time_sec"]].copy()
+#     e = effort_bands[["skill", "component", "eff_active_time_sec"]].copy()
+#     m = pd.merge(v, e, on=["skill", "component"], how="inner")
+#     for sk in _order_skills(m):
+#         sub = m[m["skill"] == sk].copy()
+#         joints = sub["component"].tolist()
+#         x = np.arange(len(joints))
+#         width = 0.4
+#
+#         fig, ax = plt.subplots(figsize=(10, 4))
+#         ax.bar(x - width / 2, sub["moving_time_sec"].values, width, label="Moving (vel)")
+#         ax.bar(x + width / 2, sub["eff_active_time_sec"].values, width, label="Effort-active")
+#         ax.set_title(f"{title_prefix} — {sk}")
+#         ax.set_xticks(x)
+#         ax.set_xticklabels(joints)
+#         ax.set_ylabel("Seconds")
+#         ax.legend(loc="upper right")
+#         plt.tight_layout()
+#         plt.show()
