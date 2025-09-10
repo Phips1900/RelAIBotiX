@@ -79,6 +79,14 @@ class BehavioralAnalyzer:
             vel_band_bins: tuple = (0.0, 0.5, 1.0, float("inf")),  # [0..0.5], (0.5..1.0], (1.0..inf)
             vel_band_multipliers: tuple = (1.0, 1.5, 3.0),  # (low, med, high)
 
+            # effort band edges and multipliers (optional effort integration)
+            eff_band_bins: tuple = (0.0, 0.2, 0.6, float("inf")),
+            eff_band_multipliers: tuple = (1.0, 1.25, 1.75),
+
+            # effort integration mode and strength
+            default_effort_mode: str = "modifier",  # "off" | "modifier" | "override"
+            effort_beta: float = 1.0,
+
     ):
         # store
         self.pos_success_tol = pos_success_tol
@@ -103,6 +111,11 @@ class BehavioralAnalyzer:
         self.vel_band_bins = vel_band_bins
         self.vel_band_multipliers = vel_band_multipliers
 
+        self.eff_band_bins = eff_band_bins
+        self.eff_band_multipliers = eff_band_multipliers
+        self.default_effort_mode = default_effort_mode
+        self.effort_beta = effort_beta
+
     def analyze(
             self,
             *,
@@ -110,7 +123,7 @@ class BehavioralAnalyzer:
             feature_names: List[str],
             labels: np.ndarray,
             timestamps: np.ndarray,
-            trials_csv: pd.DataFrame
+            trials_csv: Optional[pd.DataFrame] = None
     ) -> List[RunTrace]:
         # build component mapping from feature_names (auto)
         component_cols = self._infer_component_cols(feature_names)
@@ -129,15 +142,21 @@ class BehavioralAnalyzer:
                 se.components = self._component_metrics(features, component_cols, timestamps, se.start_idx, se.end_idx)
 
             # success from CSV
-            goal = tuple(trials_csv.loc[run_id, ["x_plan", "y_plan", ]].astype(float))
-            final = tuple(trials_csv.loc[run_id, ["x_real", "y_real", ]].astype(float))
-            dx = float(goal[0] - final[0])
-            dy = float(goal[1] - final[1])
-            max_abs_xy = max(abs(dx), abs(dy))
-            success = (max_abs_xy <= self.pos_success_tol)
-            pos_err = max_abs_xy
-            #pos_err = float(np.linalg.norm(np.array(final) - np.array(goal)))
-            #success = pos_err <= self.pos_success_tol
+            if trials_csv is not None:
+                goal = tuple(trials_csv.loc[run_id, ["x_plan", "y_plan", ]].astype(float))
+                final = tuple(trials_csv.loc[run_id, ["x_real", "y_real", ]].astype(float))
+                dx = float(goal[0] - final[0])
+                dy = float(goal[1] - final[1])
+                max_abs_xy = max(abs(dx), abs(dy))
+                success = (max_abs_xy <= self.pos_success_tol)
+                pos_err = max_abs_xy
+                #pos_err = float(np.linalg.norm(np.array(final) - np.array(goal)))
+                #success = pos_err <= self.pos_success_tol
+            else:
+                goal = (float('nan'), float('nan'))
+                final = (float('nan'), float('nan'))
+                pos_err = float('nan')
+                success = False
 
             traces.append(RunTrace(
                 run_id=run_id,
@@ -158,10 +177,14 @@ class BehavioralAnalyzer:
         Produces: {"j1":{"pos": idx, "vel": idx2}, ..., "gripper":{"state": idx}}
         """
         comp: Dict[str, Dict[str, int]] = {}
+
+        pat_primary = re.compile(r"^joint_(pos|vel|eff)_(\d+)$")
+        pat_eff_aliases = re.compile(r"^joint_(torque|effort|tau)_(\d+)$")
+
         for idx, n in enumerate(names):
             s = n.lower()
             # joints
-            m = re.match(r"joint_(pos|vel)_(\d+)$", s)
+            m = re.match(r"joint_(pos|vel|eff)_(\d+)$", s)
             if m:
                 prop = m.group(1)  # 'pos' or 'vel'
                 jid = f"j{int(m.group(2))}"
@@ -228,46 +251,240 @@ class BehavioralAnalyzer:
 
         return eps
 
+    # def _component_metrics(
+    #         self,
+    #         feats: pd.DataFrame,
+    #         comp_cols: Dict[str, Dict[str, int]],
+    #         ts: np.ndarray,  # NEW: timestamps array (shape N,)
+    #         i0: int,
+    #         i1: int
+    # ) -> Dict[str, ComponentMetrics]:
+    #     seg = feats.iloc[i0:i1 + 1]
+    #     tseg = ts[i0:i1 + 1]
+    #     out: Dict[str, ComponentMetrics] = {}
+    #
+    #     # helper: sum dt where mask at interval start is True
+    #     def active_seconds(mask: np.ndarray, t: np.ndarray) -> float:
+    #         if mask.size <= 1:
+    #             return 0.0
+    #         dt = np.diff(t)
+    #         return float(np.sum(dt[mask[:-1]]))
+    #
+    #     for comp, props in comp_cols.items():
+    #         m: Dict[str, float] = {}
+    #         active_any = False
+    #         comp_mask = np.zeros(len(seg), dtype=bool)  # per-sample activity mask (OR of all props)
+    #
+    #         for prop, col in props.items():
+    #             arr = seg.iloc[:, col].to_numpy(dtype=float)
+    #             arr = arr[np.isfinite(arr)]
+    #             if arr.size == 0:
+    #                 continue
+    #
+    #             prop_l = prop.lower()
+    #             comp_l = comp.lower()
+    #
+    #             # --- common aggregates ---
+    #             mean = float(np.mean(arr))
+    #             std = float(np.std(arr))
+    #             rms = float(np.sqrt(np.mean(arr ** 2)))
+    #             mx = float(np.max(arr))
+    #             rng = float(np.max(arr) - np.min(arr))
+    #             duty = float(np.mean(np.abs(arr) > getattr(self, "eps_abs", 1e-3)))
+    #
+    #             m[f"{comp}.{prop}_mean"] = mean
+    #             m[f"{comp}.{prop}_std"] = std
+    #             m[f"{comp}.{prop}_rms"] = rms
+    #             m[f"{comp}.{prop}_max"] = mx
+    #             m[f"{comp}.{prop}_range"] = rng
+    #             m[f"{comp}.{prop}_duty"] = duty
+    #
+    #             # build a per-sample activity mask for this property
+    #             prop_mask = np.zeros_like(comp_mask)
+    #
+    #             # --- velocity-specific extras & mask ---
+    #             if "vel" in prop_l:
+    #                 absmax = float(np.max(np.abs(arr)))
+    #                 m[f"{comp}.{prop}_absmax"] = absmax  # magnitude peak
+    #                 m[f"{comp}.{prop}_max"] = mx
+    #
+    #                 eps_vel = self.eps_vel
+    #                 rms_vel_thr = self.rms_vel_thr  # rad/s
+    #                 dc_thr = self.dc_thr
+    #
+    #                 duty_vel = float(np.mean(np.abs(arr) > eps_vel))
+    #                 m[f"{comp}.{prop}_duty_vel"] = duty_vel
+    #
+    #                 # velocity mask: above eps_vel
+    #                 prop_mask = (np.abs(arr) > eps_vel)
+    #
+    #                 # episode-level activation
+    #                 active_any = active_any or (duty_vel >= dc_thr) or (rms >= rms_vel_thr)
+    #
+    #                 # time in velocity bands (per episode)
+    #                 bt = self._band_times_from_velocity(arr, tseg)
+    #                 m[f"{comp}.{prop}_time_low_sec"] = bt["time_low_sec"]
+    #                 m[f"{comp}.{prop}_time_med_sec"] = bt["time_med_sec"]
+    #                 m[f"{comp}.{prop}_time_high_sec"] = bt["time_high_sec"]
+    #                 m[f"{comp}.{prop}_moving_time_sec"] = bt["moving_time_sec"]
+    #
+    #                 # fractions w.r.t. episode duration (guard div-by-zero)
+    #                 mt = bt["moving_time_sec"]
+    #                 # ep_dur = float(tseg[-1] - tseg[0]) if tseg[-1] > tseg[0] else 0.0
+    #                 if mt > 0:
+    #                     m[f"{comp}.{prop}_frac_low"] = bt["time_low_sec"] / mt
+    #                     m[f"{comp}.{prop}_frac_med"] = bt["time_med_sec"] / mt
+    #                     m[f"{comp}.{prop}_frac_high"] = bt["time_high_sec"] / mt
+    #                 else:
+    #                     m[f"{comp}.{prop}_frac_low"] = 0.0
+    #                     m[f"{comp}.{prop}_frac_med"] = 0.0
+    #                     m[f"{comp}.{prop}_frac_high"] = 0.0
+    #
+    #             # --- position: range criterion + per-sample step mask ---
+    #             elif "pos" in prop_l:
+    #                 range_pos_thr = getattr(self, "range_pos_thr", 0.02)  # rad
+    #                 step_thr = getattr(self, "eps_step_pos", 0.001)  # rad / sample (≈10ms at 100Hz)
+    #
+    #                 # per-sample |Δpos|
+    #                 steps = np.r_[0.0, np.abs(np.diff(arr))]
+    #                 prop_mask = (steps > step_thr)
+    #
+    #                 active_any = active_any or (rng >= range_pos_thr)
+    #
+    #             # --- torque/effort: simple amplitude/rms mask ---
+    #             elif prop_l in ("eff", "tau", "torque", "effort"):
+    #                 eps_eff = getattr(self, "eps_effort", getattr(self, "eps_abs", 1e-3))
+    #                 prop_mask = (np.abs(arr) > eps_eff)
+    #                 active_any = active_any or (rms >= getattr(self, "rms_thr", 1e-2))
+    #
+    #                 # Effort band exposure (optional, used later for modifiers)
+    #                 bt = self._band_times_from_effort(arr, tseg)
+    #                 m[f"{comp}.{prop}_time_low_sec"] = bt["time_low_sec"]
+    #                 m[f"{comp}.{prop}_time_med_sec"] = bt["time_med_sec"]
+    #                 m[f"{comp}.{prop}_time_high_sec"] = bt["time_high_sec"]
+    #                 m[f"{comp}.{prop}_active_time_sec"] = bt["active_time_sec"]
+    #
+    #                 at = bt["active_time_sec"]
+    #                 if at > 0:
+    #                     m[f"{comp}.{prop}_frac_low"] = bt["time_low_sec"] / at
+    #                     m[f"{comp}.{prop}_frac_med"] = bt["time_med_sec"] / at
+    #                     m[f"{comp}.{prop}_frac_high"] = bt["time_high_sec"] / at
+    #                 else:
+    #                     m[f"{comp}.{prop}_frac_low"] = 0.0
+    #                     m[f"{comp}.{prop}_frac_med"] = 0.0
+    #                     m[f"{comp}.{prop}_frac_high"] = 0.0
+    #                 prop_mask = (np.abs(arr) > eps_eff)
+    #                 active_any = active_any or (rms >= getattr(self, "rms_thr", 1e-2))
+    #
+    #             # --- special: gripper state in [0,1] (0=closed, 1=open) ---
+    #             if comp_l == "gripper" and prop_l in ("state", "pos"):
+    #                 state = np.clip(arr, 0.0, 1.0)
+    #                 close_thr = getattr(self, "gripper_close_thresh", 0.05)
+    #                 step_thr = getattr(self, "gripper_step_thr", 0.05)
+    #                 mid = getattr(self, "gripper_transition_mid", 0.5)
+    #
+    #                 closed_mask = (state <= close_thr)
+    #                 # transitions: open<->closed edges when |Δstate| > step_thr
+    #                 trans = np.abs(np.diff(state)) > step_thr
+    #                 trans_mask = np.r_[False, trans]
+    #
+    #                 # gripper "used" whenever closed OR transitioning
+    #                 gripper_mask = closed_mask | trans_mask
+    #                 prop_mask = gripper_mask
+    #
+    #                 closed_frac = float(np.mean(closed_mask))
+    #                 transitions = int(np.sum((state[:-1] > mid) != (state[1:] > mid)))
+    #
+    #                 m[f"{comp}.{prop}_closed_frac"] = closed_frac
+    #                 m[f"{comp}.{prop}_transitions"] = transitions
+    #
+    #                 # episode-level activation logic for gripper
+    #                 gripper_used = (closed_frac > 0.0) or (transitions >= 1)
+    #                 active_any = active_any or gripper_used
+    #
+    #             # combine into component-level mask
+    #             comp_mask |= prop_mask
+    #
+    #             # generic fallback (for properties that didn't hit a branch)
+    #             if not (comp_l == "gripper" and prop_l in ("state", "pos")) and prop_l not in ("vel", "pos", "tau",
+    #                                                                                            "torque", "effort"):
+    #                 active_any = active_any or (
+    #                         (duty >= getattr(self, "dc_thr", 0.2)) or
+    #                         (rms >= getattr(self, "rms_thr", 1e-2)) or
+    #                         (rng >= getattr(self, "range_thr", 1e-2))
+    #                 )
+    #
+    #         # --- active time (seconds) & fraction of episode ---
+    #         if tseg.size >= 2:
+    #             comp_active_sec = active_seconds(comp_mask, tseg)
+    #             ep_dur = float(tseg[-1] - tseg[0]) if tseg[-1] > tseg[0] else 0.0
+    #             comp_active_frac = (comp_active_sec / ep_dur) if ep_dur > 0 else 0.0
+    #         else:
+    #             comp_active_sec = 0.0
+    #             comp_active_frac = 0.0
+    #
+    #         # If component isn't active by episode-level rule, force time to 0 (your requirement)
+    #         if not active_any:
+    #             comp_active_sec = 0.0
+    #             comp_active_frac = 0.0
+    #
+    #         m[f"{comp}.active_time_sec"] = comp_active_sec
+    #         m[f"{comp}.active_fraction"] = comp_active_frac
+    #
+    #         out[comp] = ComponentMetrics(active=bool(active_any), metrics=m)
+    #
+    #     return out
+
     def _component_metrics(
             self,
             feats: pd.DataFrame,
             comp_cols: Dict[str, Dict[str, int]],
-            ts: np.ndarray,  # NEW: timestamps array (shape N,)
+            ts: np.ndarray,
             i0: int,
             i1: int
     ) -> Dict[str, ComponentMetrics]:
+        """
+        Compute per-component metrics for segment [i0:i1] (inclusive).
+        - comp_cols maps component -> dict of property -> column index, e.g. {"j1":{"pos":i,"vel":j,"eff":k}}
+        - All activity masks are built on the base timeline (ts[i0:i1+1]) as per-interval masks of length len(ts_seg)-1.
+        """
+        import numpy as np
+
         seg = feats.iloc[i0:i1 + 1]
-        tseg = ts[i0:i1 + 1]
+        tseg = np.asarray(ts[i0:i1 + 1], dtype=float)
         out: Dict[str, ComponentMetrics] = {}
 
-        # helper: sum dt where mask at interval start is True
-        def active_seconds(mask: np.ndarray, t: np.ndarray) -> float:
-            if mask.size <= 1:
-                return 0.0
-            dt = np.diff(t)
-            return float(np.sum(dt[mask[:-1]]))
+        if tseg.size <= 1:
+            return out  # nothing to do
+
+        dt_base = np.diff(tseg)  # length len(tseg)-1
+        ep_dur = float(tseg[-1] - tseg[0]) if tseg[-1] > tseg[0] else 0.0
 
         for comp, props in comp_cols.items():
             m: Dict[str, float] = {}
             active_any = False
-            comp_mask = np.zeros(len(seg), dtype=bool)  # per-sample activity mask (OR of all props)
+
+            # Per-component activity mask on BASE timeline
+            comp_mask = np.zeros(len(dt_base), dtype=bool)
 
             for prop, col in props.items():
+                prop_l = str(prop).lower()
+                comp_l = str(comp).lower()
+
+                # Slice the series from feats on this segment
                 arr = seg.iloc[:, col].to_numpy(dtype=float)
-                arr = arr[np.isfinite(arr)]
-                if arr.size == 0:
+                # Keep raw arrays (don't shrink!) so masks align with tseg
+                # Basic aggregates (guard non-finite safely)
+                arr_finite = arr[np.isfinite(arr)]
+                if arr_finite.size == 0:
                     continue
 
-                prop_l = prop.lower()
-                comp_l = comp.lower()
-
-                # --- common aggregates ---
-                mean = float(np.mean(arr))
-                std = float(np.std(arr))
-                rms = float(np.sqrt(np.mean(arr ** 2)))
-                mx = float(np.max(arr))
-                rng = float(np.max(arr) - np.min(arr))
-                duty = float(np.mean(np.abs(arr) > getattr(self, "eps_abs", 1e-3)))
+                mean = float(np.mean(arr_finite))
+                std = float(np.std(arr_finite))
+                rms = float(np.sqrt(np.mean(arr_finite ** 2)))
+                mx = float(np.max(arr_finite))
+                rng = float(np.max(arr_finite) - np.min(arr_finite))
+                duty = float(np.mean(np.abs(arr_finite) > getattr(self, "eps_abs", 1e-3)))
 
                 m[f"{comp}.{prop}_mean"] = mean
                 m[f"{comp}.{prop}_std"] = std
@@ -276,112 +493,120 @@ class BehavioralAnalyzer:
                 m[f"{comp}.{prop}_range"] = rng
                 m[f"{comp}.{prop}_duty"] = duty
 
-                # build a per-sample activity mask for this property
-                prop_mask = np.zeros_like(comp_mask)
-
-                # --- velocity-specific extras & mask ---
+                # ---- Velocity branch (native timeline = base) ----
                 if "vel" in prop_l:
-                    absmax = float(np.max(np.abs(arr)))
-                    m[f"{comp}.{prop}_absmax"] = absmax  # magnitude peak
-                    m[f"{comp}.{prop}_max"] = mx
+                    eps_vel = getattr(self, "eps_vel", 1e-3)
+                    rms_vel_thr = getattr(self, "rms_vel_thr", 1e-2)
+                    dc_thr = getattr(self, "dc_thr", 0.2)
 
-                    eps_vel = self.eps_vel
-                    rms_vel_thr = self.rms_vel_thr  # rad/s
-                    dc_thr = self.dc_thr
-
-                    duty_vel = float(np.mean(np.abs(arr) > eps_vel))
-                    m[f"{comp}.{prop}_duty_vel"] = duty_vel
-
-                    # velocity mask: above eps_vel
-                    prop_mask = (np.abs(arr) > eps_vel)
+                    # per-interval mask on base timeline
+                    vel_mask = self._active_mask_from_series(arr, tseg, eps_vel)
+                    comp_mask |= vel_mask
 
                     # episode-level activation
+                    duty_vel = float(np.mean(np.abs(arr_finite) > eps_vel))
+                    m[f"{comp}.{prop}_duty_vel"] = duty_vel
                     active_any = active_any or (duty_vel >= dc_thr) or (rms >= rms_vel_thr)
 
-                    # time in velocity bands (per episode)
-                    bt = self._band_times_from_velocity(arr, tseg)
-                    m[f"{comp}.{prop}_time_low_sec"] = bt["time_low_sec"]
-                    m[f"{comp}.{prop}_time_med_sec"] = bt["time_med_sec"]
-                    m[f"{comp}.{prop}_time_high_sec"] = bt["time_high_sec"]
-                    m[f"{comp}.{prop}_moving_time_sec"] = bt["moving_time_sec"]
+                    # velocity band times (on base timeline)
+                    vbt = self._band_times_from_velocity(arr, tseg)
+                    m[f"{comp}.{prop}_time_low_sec"] = vbt["time_low_sec"]
+                    m[f"{comp}.{prop}_time_med_sec"] = vbt["time_med_sec"]
+                    m[f"{comp}.{prop}_time_high_sec"] = vbt["time_high_sec"]
+                    m[f"{comp}.{prop}_moving_time_sec"] = vbt["moving_time_sec"]
 
-                    # fractions w.r.t. episode duration (guard div-by-zero)
-                    mt = bt["moving_time_sec"]
-                    # ep_dur = float(tseg[-1] - tseg[0]) if tseg[-1] > tseg[0] else 0.0
-                    if mt > 0:
-                        m[f"{comp}.{prop}_frac_low"] = bt["time_low_sec"] / mt
-                        m[f"{comp}.{prop}_frac_med"] = bt["time_med_sec"] / mt
-                        m[f"{comp}.{prop}_frac_high"] = bt["time_high_sec"] / mt
+                    mt = vbt["moving_time_sec"]
+                    if mt > 0.0:
+                        m[f"{comp}.{prop}_frac_low"] = vbt["time_low_sec"] / mt
+                        m[f"{comp}.{prop}_frac_med"] = vbt["time_med_sec"] / mt
+                        m[f"{comp}.{prop}_frac_high"] = vbt["time_high_sec"] / mt
                     else:
                         m[f"{comp}.{prop}_frac_low"] = 0.0
                         m[f"{comp}.{prop}_frac_med"] = 0.0
                         m[f"{comp}.{prop}_frac_high"] = 0.0
 
-                # --- position: range criterion + per-sample step mask ---
+                # ---- Position branch (range + step activity) ----
                 elif "pos" in prop_l:
                     range_pos_thr = getattr(self, "range_pos_thr", 0.02)  # rad
-                    step_thr = getattr(self, "eps_step_pos", 0.001)  # rad / sample (≈10ms at 100Hz)
+                    step_thr = getattr(self, "eps_step_pos", 0.001)  # rad / sample
 
-                    # per-sample |Δpos|
-                    steps = np.r_[0.0, np.abs(np.diff(arr))]
-                    prop_mask = (steps > step_thr)
+                    steps = np.r_[0.0, np.abs(np.diff(arr))]  # per-sample
+                    # convert to per-interval by looking at left endpoint step
+                    pos_mask = steps[:-1] > step_thr
+                    comp_mask |= pos_mask
 
                     active_any = active_any or (rng >= range_pos_thr)
 
-                # --- torque/effort: simple amplitude/rms mask ---
-                elif prop_l in ("tau", "torque", "effort"):
+                # ---- Effort/Torque branch (may be different timeline) ----
+                elif prop_l in ("eff", "tau", "torque", "effort"):
                     eps_eff = getattr(self, "eps_effort", getattr(self, "eps_abs", 1e-3))
-                    prop_mask = (np.abs(arr) > eps_eff)
+
+                    # effort may be downsampled → get aligned ts specific to this column
+                    eff_vals, eff_ts = self._slice_series_with_ts(feats, ts, i0, i1, col)
+
+                    # per-interval mask on its own timeline
+                    eff_mask_local = self._active_mask_from_series(eff_vals, eff_ts, eps_eff)
+                    # turn mask into (t0,t1) intervals on eff_ts
+                    eff_intervals = self._boolean_runs_to_intervals(eff_mask_local, eff_ts)
+                    # project onto base timeline → per-interval mask length == len(dt_base)
+                    eff_mask_on_base = self._intervals_to_base_mask(eff_intervals, tseg)
+                    comp_mask |= eff_mask_on_base
+
+                    # Effort band exposure (computed on effort timeline ONLY)
+                    ebt = self._band_times_from_effort(eff_vals, eff_ts)
+                    m[f"{comp}.{prop}_time_low_sec"] = ebt["time_low_sec"]
+                    m[f"{comp}.{prop}_time_med_sec"] = ebt["time_med_sec"]
+                    m[f"{comp}.{prop}_time_high_sec"] = ebt["time_high_sec"]
+                    m[f"{comp}.{prop}_active_time_sec"] = ebt["active_time_sec"]
+
+                    at = ebt["active_time_sec"]
+                    if at > 0.0:
+                        m[f"{comp}.{prop}_frac_low"] = ebt["time_low_sec"] / at
+                        m[f"{comp}.{prop}_frac_med"] = ebt["time_med_sec"] / at
+                        m[f"{comp}.{prop}_frac_high"] = ebt["time_high_sec"] / at
+                    else:
+                        m[f"{comp}.{prop}_frac_low"] = 0.0
+                        m[f"{comp}.{prop}_frac_med"] = 0.0
+                        m[f"{comp}.{prop}_frac_high"] = 0.0
+
+                    # episode-level activation
                     active_any = active_any or (rms >= getattr(self, "rms_thr", 1e-2))
 
-                # --- special: gripper state in [0,1] (0=closed, 1=open) ---
+                # ---- Gripper branch (state ∈ [0,1]) ----
                 if comp_l == "gripper" and prop_l in ("state", "pos"):
                     state = np.clip(arr, 0.0, 1.0)
                     close_thr = getattr(self, "gripper_close_thresh", 0.05)
                     step_thr = getattr(self, "gripper_step_thr", 0.05)
                     mid = getattr(self, "gripper_transition_mid", 0.5)
 
-                    closed_mask = (state <= close_thr)
-                    # transitions: open<->closed edges when |Δstate| > step_thr
-                    trans = np.abs(np.diff(state)) > step_thr
-                    trans_mask = np.r_[False, trans]
+                    closed_left = state[:-1] <= close_thr  # per-interval
+                    trans = np.abs(np.diff(state)) > step_thr  # per-interval
+                    gripper_mask = closed_left | trans
+                    comp_mask |= gripper_mask
 
-                    # gripper "used" whenever closed OR transitioning
-                    gripper_mask = closed_mask | trans_mask
-                    prop_mask = gripper_mask
-
-                    closed_frac = float(np.mean(closed_mask))
+                    closed_frac = float(np.mean(state <= close_thr))
                     transitions = int(np.sum((state[:-1] > mid) != (state[1:] > mid)))
 
                     m[f"{comp}.{prop}_closed_frac"] = closed_frac
                     m[f"{comp}.{prop}_transitions"] = transitions
 
-                    # episode-level activation logic for gripper
                     gripper_used = (closed_frac > 0.0) or (transitions >= 1)
                     active_any = active_any or gripper_used
 
-                # combine into component-level mask
-                comp_mask |= prop_mask
-
-                # generic fallback (for properties that didn't hit a branch)
-                if not (comp_l == "gripper" and prop_l in ("state", "pos")) and prop_l not in ("vel", "pos", "tau",
-                                                                                               "torque", "effort"):
+                # ---- Generic fallback: episode-level "active" heuristics only ----
+                if not (("vel" in prop_l) or ("pos" in prop_l) or (prop_l in ("eff", "tau", "torque", "effort")) or (
+                        comp_l == "gripper" and prop_l in ("state", "pos"))):
                     active_any = active_any or (
                             (duty >= getattr(self, "dc_thr", 0.2)) or
                             (rms >= getattr(self, "rms_thr", 1e-2)) or
                             (rng >= getattr(self, "range_thr", 1e-2))
                     )
 
-            # --- active time (seconds) & fraction of episode ---
-            if tseg.size >= 2:
-                comp_active_sec = active_seconds(comp_mask, tseg)
-                ep_dur = float(tseg[-1] - tseg[0]) if tseg[-1] > tseg[0] else 0.0
-                comp_active_frac = (comp_active_sec / ep_dur) if ep_dur > 0 else 0.0
-            else:
-                comp_active_sec = 0.0
-                comp_active_frac = 0.0
+            # --- Active time and fraction for this component (on base timeline) ---
+            comp_active_sec = float(np.sum(dt_base[comp_mask])) if dt_base.size else 0.0
+            comp_active_frac = (comp_active_sec / ep_dur) if ep_dur > 0.0 else 0.0
 
-            # If component isn't active by episode-level rule, force time to 0 (your requirement)
+            # If "inactive" per episode-level logic, zero-out the activity summary (as per your requirement)
             if not active_any:
                 comp_active_sec = 0.0
                 comp_active_frac = 0.0
@@ -509,6 +734,97 @@ class BehavioralAnalyzer:
         t_high = float(np.sum(dt[high_mask]))
         t_move = t_low + t_med + t_high
         return dict(time_low_sec=t_low, time_med_sec=t_med, time_high_sec=t_high, moving_time_sec=t_move)
+
+    def _band_times_from_effort(self, eff: np.ndarray, ts: np.ndarray):
+        """
+        Effort bands over the episode/segment. Returns:
+          dict(time_low_sec, time_med_sec, time_high_sec, active_time_sec)
+
+        Robust to length mismatches: if len(eff) != len(ts), we construct a uniform
+        dt over [ts[0], ts[-1]] with length len(eff)-1 so the masks and dt align.
+        """
+        eff = np.asarray(eff).reshape(-1)
+        ts = np.asarray(ts).reshape(-1)
+
+        if eff.size <= 1 or ts.size <= 1:
+            return dict(time_low_sec=0.0, time_med_sec=0.0, time_high_sec=0.0, active_time_sec=0.0)
+
+        # Build dt aligned to the effort series
+        if eff.size == ts.size:
+            dt = np.diff(ts)
+        else:
+            # Fallback: uniform spacing over the segment duration
+            total = float(ts[-1] - ts[0])
+            steps = max(int(eff.size) - 1, 1)
+            dt = np.full(steps, total / steps, dtype=float)
+
+        a = np.abs(eff)
+        a0 = a[:-1]  # align with dt
+
+        b0, b1, b2, b3 = self.eff_band_bins
+        act_mask = (a0 > self.eps_effort)
+
+        low_mask = act_mask & (a0 >= b0) & (a0 < b1)
+        med_mask = act_mask & (a0 >= b1) & (a0 < b2)
+        high_mask = act_mask & (a0 >= b2) & (a0 < b3)
+
+        # IMPORTANT: masks and dt now have identical length
+        t_low = float(np.sum(dt[low_mask]))
+        t_med = float(np.sum(dt[med_mask]))
+        t_high = float(np.sum(dt[high_mask]))
+        t_act = t_low + t_med + t_high
+
+        return dict(time_low_sec=t_low, time_med_sec=t_med, time_high_sec=t_high, active_time_sec=t_act)
+
+    def _slice_series_with_ts(self, features, timestamps, idx0, idx1, col_idx):
+        """Return (series, ts_for_series) over [idx0:idx1] inclusive.
+        If the column has a different sample count, generate a matching ts."""
+        series = features.iloc[idx0:idx1 + 1, col_idx].to_numpy().reshape(-1)
+        ts_seg = np.asarray(timestamps[idx0:idx1 + 1], dtype=float).reshape(-1)
+        if series.shape[0] != ts_seg.shape[0]:
+            if series.shape[0] >= 2:
+                ts_aligned = np.linspace(ts_seg[0], ts_seg[-1], num=series.shape[0])
+            else:
+                ts_aligned = ts_seg[:series.shape[0]]
+        else:
+            ts_aligned = ts_seg
+        return series, ts_aligned
+
+    def _boolean_runs_to_intervals(self, mask_dt: np.ndarray, ts: np.ndarray):
+        """mask_dt is length len(ts)-1. Return list of (t_start, t_end) where mask is True."""
+        if mask_dt.size == 0:
+            return []
+        x = mask_dt.astype(np.int8)
+        d = np.diff(np.r_[0, x, 0])
+        starts = np.where(d == 1)[0]
+        ends = np.where(d == -1)[0]
+        # each True run covers dt cells [k ... e-1] -> time [ts[k], ts[e]]
+        intervals = [(float(ts[k]), float(ts[e])) for k, e in zip(starts, ends)]
+        return intervals
+
+    def _intervals_to_base_mask(self, intervals, base_ts: np.ndarray):
+        """Project (t_start, t_end) intervals onto base timeline.
+        Returns mask of length len(base_ts)-1 where any overlap marks True."""
+        n = max(len(base_ts) - 1, 0)
+        out = np.zeros(n, dtype=bool)
+        if n == 0 or not intervals:
+            return out
+        for t0, t1 in intervals:
+            if t1 <= base_ts[0] or t0 >= base_ts[-1]:
+                continue
+            # indices of base bins [base_ts[i], base_ts[i+1])
+            i0 = max(0, int(np.searchsorted(base_ts, t0, side="right") - 1))
+            i1 = min(n, int(np.searchsorted(base_ts, t1, side="left")))
+            if i1 > i0:
+                out[i0:i1] = True
+        return out
+
+    def _active_mask_from_series(self, values: np.ndarray, ts: np.ndarray, eps: float):
+        """Build per-dt active mask: True when |values| > eps (length len(ts)-1)."""
+        if values.size <= 1 or ts.size <= 1:
+            return np.zeros(0, dtype=bool)
+        v0 = np.abs(values[:-1])
+        return v0 > eps
 
     def summarize(self, traces) -> Dict[str, pd.DataFrame]:
         """
@@ -640,70 +956,234 @@ class BehavioralAnalyzer:
                 "moving_time_sec", "frac_low_of_moving", "frac_med_of_moving", "frac_high_of_moving"
             ])
 
+        # --- Effort bands (optional) ---
+        joints_only = components_df[components_df["component"].str.startswith("j")].copy()
+
+        def col_or_nan(df, suffix):
+            cols = [c for c in df.columns if c.endswith(suffix)]
+            if not cols:
+                return None
+            df[suffix] = df[cols].sum(axis=1)
+            return suffix
+
+        eff_low_col = col_or_nan(joints_only, ".eff_time_low_sec")
+        eff_med_col = col_or_nan(joints_only, ".eff_time_med_sec")
+        eff_high_col = col_or_nan(joints_only, ".eff_time_high_sec")
+        eff_act_col = col_or_nan(joints_only, ".eff_active_time_sec")
+
+        if all(c is not None for c in (eff_low_col, eff_med_col, eff_high_col, eff_act_col)):
+            effort_bands = (
+                joints_only.groupby(["skill", "component"], as_index=False)[
+                        [eff_low_col, eff_med_col, eff_high_col, eff_act_col]]
+                .sum()
+                .rename(columns={
+                    eff_low_col: "eff_time_low_sec",
+                    eff_med_col: "eff_time_med_sec",
+                    eff_high_col: "eff_time_high_sec",
+                    eff_act_col: "eff_active_time_sec",
+                })
+            )
+            eat = effort_bands["eff_active_time_sec"].replace(0, np.nan)
+            effort_bands["eff_frac_low"] = effort_bands["eff_time_low_sec"] / eat
+            effort_bands["eff_frac_med"] = effort_bands["eff_time_med_sec"] / eat
+            effort_bands["eff_frac_high"] = effort_bands["eff_time_high_sec"] / eat
+            effort_bands[["eff_frac_low", "eff_frac_med", "eff_frac_high"]] = effort_bands[
+                    ["eff_frac_low", "eff_frac_med", "eff_frac_high"]].fillna(0.0)
+        else:
+            effort_bands = pd.DataFrame(columns=[
+                    "skill", "component", "eff_time_low_sec", "eff_time_med_sec", "eff_time_high_sec",
+                    "eff_active_time_sec", "eff_frac_low", "eff_frac_med", "eff_frac_high"
+            ])
+
         return {
             "sequences": seq_counts,
             "overall": overall,
             "skill_time": skill_time,
             "comp_usage": comp_usage,
             "joint_velocity": joint_velocity,
-            "velocity_bands": band_aggs
+            "velocity_bands": band_aggs,
+            "effort_bands": effort_bands
         }
 
-    def assess_failure_from_bands(self, traces):
+    # def assess_failure_from_bands(self, traces):
+    #     """
+    #     Compute P_fail(skill, component) from band exposure.
+    #     base_prob_per_minute: dict mapping component -> p0 per minute (e.g., {"j1":1e-3, "joint":1e-3, "default":1e-3})
+    #     Uses self.vel_band_multipliers = (m_low, m_med, m_high).
+    #     Returns DataFrame with columns:
+    #       [skill, component, p0_per_min, lambda0_per_s, time_low_sec, time_med_sec, time_high_sec,
+    #        m_low, m_med, m_high, hazard, p_fail]
+    #     """
+    #
+    #     summary = self.summarize(traces)
+    #     bands = summary["velocity_bands"].copy()
+    #     if bands.empty:
+    #         return pd.DataFrame(columns=[
+    #             "skill", "component", "p0_per_min", "lambda0_per_s", "time_low_sec", "time_med_sec", "time_high_sec",
+    #             "m_low", "m_med", "m_high", "hazard", "p_fail"
+    #         ])
+    #
+    #     m_low, m_med, m_high = self.vel_band_multipliers
+    #
+    #     def base_p0_for(comp: str):
+    #         if comp in self.base_prob_per_minute:
+    #             return float(self.base_prob_per_minute[comp])
+    #         # allow a generic 'joint' default for all j*
+    #         if comp.startswith("j") and "joint" in base_prob_per_minute:
+    #             return float(self.base_prob_per_minute["joint"])
+    #         if "default" in self.base_prob_per_minute:
+    #             return float(self.base_prob_per_minute["default"])
+    #         raise ValueError(
+    #             f"No base failure probability provided for component '{comp}' and no 'joint'/'default' fallback.")
+    #
+    #     rows = []
+    #     for _, row in bands.iterrows():
+    #         comp = row["component"]
+    #         p0 = base_p0_for(comp)
+    #         # per-second hazard (Poisson assumption)
+    #         lambda0 = -np.log(max(1.0 - p0, 1e-12)) / 60.0
+    #
+    #         tL = float(row["time_low_sec"])
+    #         tM = float(row["time_med_sec"])
+    #         tH = float(row["time_high_sec"])
+    #
+    #         hazard = lambda0 * (m_low * tL + m_med * tM + m_high * tH)
+    #         p_fail = 1.0 - np.exp(-hazard)
+    #
+    #         rows.append(dict(
+    #             skill=row["skill"], component=comp,
+    #             p0_per_min=p0, lambda0_per_s=lambda0,
+    #             time_low_sec=tL, time_med_sec=tM, time_high_sec=tH,
+    #             m_low=m_low, m_med=m_med, m_high=m_high,
+    #             hazard=hazard, p_fail=p_fail
+    #         ))
+    #
+    #     df = pd.DataFrame(rows)
+    #     return df
+
+    def assess_failure_from_bands(self, traces, effort_mode: Optional[str] = None, beta: Optional[float] = None):
         """
-        Compute P_fail(skill, component) from band exposure.
-        base_prob_per_minute: dict mapping component -> p0 per minute (e.g., {"j1":1e-3, "joint":1e-3, "default":1e-3})
-        Uses self.vel_band_multipliers = (m_low, m_med, m_high).
+        Compute P_fail(skill, component) using velocity bands, optionally modulated by effort.
+        Parameters:
+            effort_mode:
+                - "off":      ignore effort completely (legacy behavior)
+                - "modifier": use velocity band times ONLY; multiply hazard by EffortFactor
+                - "override": active time = union(vel_active, eff_active); rescale velocity fractions to union
+            beta:
+                Strength of effort factor blending in "modifier"/"override":
+                    EffortFactor = (1 - beta) + beta * ( Σ_j eff_frac_j * m_eff_j )
+
         Returns DataFrame with columns:
-          [skill, component, p0_per_min, lambda0_per_s, time_low_sec, time_med_sec, time_high_sec,
-           m_low, m_med, m_high, hazard, p_fail]
+            [skill, component, p0_per_min, lambda0_per_s,
+             time_low_sec, time_med_sec, time_high_sec,
+             m_low, m_med, m_high, eff_mode, eff_factor, union_active_time_sec,
+             hazard, p_fail]
         """
+        mode = (effort_mode or getattr(self, "default_effort_mode", "off")).lower()
+        beta = getattr(self, "effort_beta", 1.0) if beta is None else float(beta)
 
         summary = self.summarize(traces)
-        bands = summary["velocity_bands"].copy()
+        bands = summary.get("velocity_bands", pd.DataFrame()).copy()
         if bands.empty:
             return pd.DataFrame(columns=[
-                "skill", "component", "p0_per_min", "lambda0_per_s", "time_low_sec", "time_med_sec", "time_high_sec",
-                "m_low", "m_med", "m_high", "hazard", "p_fail"
+                "skill","component","p0_per_min","lambda0_per_s",
+                "time_low_sec","time_med_sec","time_high_sec",
+                "m_low","m_med","m_high","eff_mode","eff_factor","union_active_time_sec",
+                "hazard","p_fail"
             ])
 
-        m_low, m_med, m_high = self.vel_band_multipliers
+        etab = summary.get("effort_bands", pd.DataFrame()).copy()
+        if etab.empty:
+            etab = pd.DataFrame(columns=[
+                "skill","component","eff_time_low_sec","eff_time_med_sec","eff_time_high_sec",
+                "eff_active_time_sec","eff_frac_low","eff_frac_med","eff_frac_high"
+            ])
+            etab["skill"] = bands["skill"]
+            etab["component"] = bands["component"]
+            etab = etab.fillna(0.0)
 
-        def base_p0_for(comp: str):
-            if comp in self.base_prob_per_minute:
-                return float(self.base_prob_per_minute[comp])
-            # allow a generic 'joint' default for all j*
-            if comp.startswith("j") and "joint" in base_prob_per_minute:
-                return float(self.base_prob_per_minute["joint"])
-            if "default" in self.base_prob_per_minute:
-                return float(self.base_prob_per_minute["default"])
-            raise ValueError(
-                f"No base failure probability provided for component '{comp}' and no 'joint'/'default' fallback.")
+        tab = pd.merge(bands, etab, on=["skill","component"], how="left").fillna(0.0)
+
+        mL, mM, mH = self.vel_band_multipliers
+        eL, eM, eH = getattr(self, "eff_band_multipliers", (1.0,1.0,1.0))
 
         rows = []
-        for _, row in bands.iterrows():
-            comp = row["component"]
-            p0 = base_p0_for(comp)
-            # per-second hazard (Poisson assumption)
+        for _, r in tab.iterrows():
+            comp = r["component"]
+
+            # base probability lookup with fallbacks
+            p0 = 0.0
+            if hasattr(self, "base_prob_per_minute"):
+                if comp in self.base_prob_per_minute:
+                    p0 = float(self.base_prob_per_minute[comp])
+                elif comp.startswith("j") and ("joint" in self.base_prob_per_minute):
+                    p0 = float(self.base_prob_per_minute["joint"])
+                else:
+                    p0 = float(self.base_prob_per_minute.get("default", 0.0))
+            if p0 <= 0.0:
+                # skip if no base rate available
+                continue
+
             lambda0 = -np.log(max(1.0 - p0, 1e-12)) / 60.0
 
-            tL = float(row["time_low_sec"])
-            tM = float(row["time_med_sec"])
-            tH = float(row["time_high_sec"])
+            # velocity exposure (no effort added here)
+            tL = float(r.get("time_low_sec", 0.0))
+            tM = float(r.get("time_med_sec", 0.0))
+            tH = float(r.get("time_high_sec", 0.0))
+            tV = float(r.get("moving_time_sec", 0.0))
 
-            hazard = lambda0 * (m_low * tL + m_med * tM + m_high * tH)
+            if tV <= 0.0:
+                rows.append(dict(
+                    skill=r["skill"], component=comp, p0_per_min=p0, lambda0_per_s=lambda0,
+                    time_low_sec=0.0, time_med_sec=0.0, time_high_sec=0.0,
+                    m_low=mL, m_med=mM, m_high=mH,
+                    eff_mode=mode, eff_factor=1.0, union_active_time_sec=max(tV, float(r.get("eff_active_time_sec", 0.0))),
+                    hazard=0.0, p_fail=0.0
+                ))
+                continue
+
+            hazard_vel = lambda0 * (mL * tL + mM * tM + mH * tH)
+
+            # EffortFactor from fractions (dimensionless)
+            eff_factor = 1.0
+            if mode in ("modifier", "override"):
+                eat = float(r.get("eff_active_time_sec", 0.0))
+                if eat > 0.0:
+                    efL = float(r.get("eff_frac_low", 0.0))
+                    efM = float(r.get("eff_frac_med", 0.0))
+                    efH = float(r.get("eff_frac_high", 0.0))
+                    e_avg = (efL*eL) + (efM*eM) + (efH*eH)
+                    eff_factor = (1.0 - beta) + beta * e_avg
+                else:
+                    eff_factor = 1.0
+
+            union_active = float(max(tV, float(r.get("eff_active_time_sec", 0.0))))
+            if mode == "override" and union_active > 0 and tV > 0:
+                # rescale velocity fractions to union time (no double counting)
+                fL = tL / tV
+                fM = tM / tV
+                fH = tH / tV
+                tL_u = fL * union_active
+                tM_u = fM * union_active
+                tH_u = fH * union_active
+                hazard = lambda0 * (mL*tL_u + mM*tM_u + mH*tH_u) * eff_factor
+            elif mode == "modifier":
+                hazard = hazard_vel * eff_factor
+            else:
+                hazard = hazard_vel
+                union_active = tV
+
             p_fail = 1.0 - np.exp(-hazard)
 
             rows.append(dict(
-                skill=row["skill"], component=comp,
-                p0_per_min=p0, lambda0_per_s=lambda0,
+                skill=r["skill"], component=comp, p0_per_min=p0, lambda0_per_s=lambda0,
                 time_low_sec=tL, time_med_sec=tM, time_high_sec=tH,
-                m_low=m_low, m_med=m_med, m_high=m_high,
+                m_low=mL, m_med=mM, m_high=mH,
+                eff_mode=mode, eff_factor=eff_factor, union_active_time_sec=union_active,
                 hazard=hazard, p_fail=p_fail
             ))
 
-        df = pd.DataFrame(rows)
-        return df
+        return pd.DataFrame(rows)
 
     def assess_failure_for_gripper(self, traces):
         """Compute gripper p_fail(skill) using active_time_sec only."""

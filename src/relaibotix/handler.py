@@ -10,20 +10,20 @@ from relaibotix.reliability.prism import *
 
 H5 = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_infer_10.h5")
 CKPT = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/checkpoints/panda_cnn_trans_lpe_F_v1_epoch=17.ckpt")
-out_dir = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/reports/infer")
+out_dir = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/reports/franka")
 out_dir.mkdir(parents=True, exist_ok=True)
 out_dir_prism = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/prism")
 out_dir_prism.mkdir(parents=True, exist_ok=True)
 
-with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_infer_10.h5", "r") as f:
+with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_slow_20.h5", "r") as f:
     features_arr = f["features"][()]  # (N, 22)
     labels = f["labels"][()]  # (N,)
-    labels_pred = f["labels_pred"][()]  # (N,)
+    #labels_pred = f["labels_pred"][()]  # (N,)
     timestamps = f["timestamps"][()]  # (N,)
     feat_names = [n.decode() if hasattr(n, "decode") else str(n)
                   for n in f["features"].attrs["feature_names"]]
 
-# with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/data.h5", "r") as f:
+# with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/yaskawa.h5", "r") as f:
 #     features_arr = f["features"][()]  # (N, D)
 #     labels = f["labels"][()]  # (N,)
 #     timestamps = f["timestamps"][()]  # (N,)
@@ -38,10 +38,9 @@ with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_infer_1
 
 features_df = pd.DataFrame(features_arr)
 
-labels_pred_filter = filter_short_segments(labels_pred)
+#labels_pred_filter = filter_short_segments(labels_pred)
 
-# report = compare_predictions(labels, labels_pred, class_names=["Init", "Move", "Pick", "Carry", "Place"])
-# report_2 = compare_predictions(labels, labels_pred_filter, class_names=["Init", "Move", "Pick", "Carry", "Place"])
+# report = compare_predictions(labels, labels_pred_filter, class_names=["Init", "Move", "Pick", "Carry", "Place"])
 
 # run_inference(h5_path=H5,
 #               checkpoint_path=CKPT,
@@ -55,26 +54,17 @@ labels_pred_filter = filter_short_segments(labels_pred)
 #               stride=1,
 #               )
 
-# # 1) Load H5 pieces
-# with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_test_100.h5", "r") as f:
-#     features_arr = f["features"][()]  # (N, 22)
-#     labels = f["labels"][()]  # (N,)
-#     timestamps = f["timestamps"][()]  # (N,)
-#     feat_names = [n.decode() if hasattr(n, "decode") else str(n)
-#                   for n in f["features"].attrs["feature_names"]]
-#
-# features_df = pd.DataFrame(features_arr)
 
 # 2) Load CSV with goal/final per run
 trials_csv = pd.read_csv(
-    "/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_infer_summary_10.csv")
+     "/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_slow_summary_20.csv")
 
 # 3) Analyze
 an = BehavioralAnalyzer(pos_success_tol=0.02)  # tune eps_abs/dc_thr/rms_thr/range_thr later if needed
 traces: List[RunTrace] = an.analyze(
     features=features_df,
     feature_names=feat_names,
-    labels=labels_pred_filter,
+    labels=labels,
     timestamps=timestamps,
     trials_csv=trials_csv
 )
@@ -82,6 +72,7 @@ traces: List[RunTrace] = an.analyze(
 summary = an.summarize(traces)
 
 base_p = an.load_base_probs_from_json("/Users/Phips1900/PhD/Research/RelAIBotiX/config_files/robots/franka_config.json")
+#base_p = an.load_base_probs_from_json("/Users/Phips1900/PhD/Research/RelAIBotiX/config_files/robots/yaskawa_config.json")
 
 joint_failure_table = an.assess_failure_from_bands(traces)
 gripper_table = an.assess_failure_for_gripper(traces)
@@ -118,14 +109,14 @@ hybrid_model.add_markov_chain(mc)
 
 system_reliability, absorption_prob, absorption_time = hybrid_model.compute_system_reliability(ft_dict=ft_dict)
 
-mc = hybrid_model.get_markov_chain()
-prism_model, prism_props = write_prism_and_props(
-    mc,
-    out_basename=out_dir_prism / "relaibotix_dtmc",
-    model_name="RelAIBotiX",
-    precision=12,
-)
-print(f"[PRISM] wrote {prism_model} and {prism_props}")
+# mc = hybrid_model.get_markov_chain()
+# prism_model, prism_props = write_prism_and_props(
+#     mc,
+#     out_basename=out_dir_prism / "relaibotix_dtmc",
+#     model_name="RelAIBotiX",
+#     precision=12,
+# )
+# print(f"[PRISM] wrote {prism_model} and {prism_props}")
 
 print(system_reliability)
 print(absorption_prob)
@@ -189,13 +180,13 @@ plots.append(p_2)
 
 
 report_json = write_report_json_extended(
-    name="RelAIBotiX",
+    name="RelAIBotiX - Franka",
     system_failure_prob=system_reliability,
     task_success_rate_percent=task_success,
     base_probs=base_p_per_min,
     skill_pf=skill_pf,
     summary=summary,
-    outpath=out_dir / "report_extended1.json",
+    outpath=out_dir / "report_franka_slow.json",
 )
 
-create_pdf_extended(str(report_json), [str(p) for p in plots], filename=str(out_dir / "report_extended1.pdf"))
+create_pdf_extended(str(report_json), [str(p) for p in plots], filename=str(out_dir / "report_franka_slow.pdf"))
