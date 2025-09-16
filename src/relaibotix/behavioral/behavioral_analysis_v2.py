@@ -42,6 +42,7 @@ class RunTrace:
 
 
 SKILL_ID_TO_NAME = {0: "Init", 1: "Move", 2: "Pick", 3: "Carry", 4: "Place"}
+# SKILL_ID_TO_NAME = {0: "Move", 1: "Pick", 2: "Carry", 3: "Place", 4: "Init"}
 
 
 class BehavioralAnalyzer:
@@ -77,7 +78,7 @@ class BehavioralAnalyzer:
 
             # velocity band edges and multipliers
             vel_band_bins: tuple = (0.0, 0.5, 1.0, float("inf")),  # [0..0.5], (0.5..1.0], (1.0..inf)
-            vel_band_multipliers: tuple = (1.0, 1.5, 3.0),  # (low, med, high)
+            vel_band_multipliers: tuple = (1.0, 2.0, 5.0),  # (low, med, high)
 
             # effort band edges and multipliers (optional effort integration)
             eff_band_bins: tuple = (0.0, 0.2, 0.6, float("inf")),
@@ -123,17 +124,22 @@ class BehavioralAnalyzer:
             feature_names: List[str],
             labels: np.ndarray,
             timestamps: np.ndarray,
-            trials_csv: Optional[pd.DataFrame] = None
+            trials_csv: Optional[pd.DataFrame] = None,
+            episode_labels: Optional[np.ndarray] = None
     ) -> List[RunTrace]:
         # build component mapping from feature_names (auto)
         component_cols = self._infer_component_cols(feature_names)
 
         # detect runs using last-4 rule
-        run_bounds = self._detect_runs(labels)
+        run_bounds = self._detect_runs(labels, episode_labels=episode_labels)
 
         traces: List[RunTrace] = []
 
+        feat_names = list(feature_names)
+
         for run_id, (i0, i1) in enumerate(run_bounds):
+            # per-run slice
+            X_run = features.iloc[i0:i1 + 1].to_numpy(dtype=float)
             # segment segments via run-length on labels slice
             segments = self._segment_skills(labels[i0:i1 + 1], timestamps[i0:i1 + 1], offset=i0)
 
@@ -141,22 +147,13 @@ class BehavioralAnalyzer:
             for se in segments:
                 se.components = self._component_metrics(features, component_cols, timestamps, se.start_idx, se.end_idx)
 
-            # success from CSV
-            if trials_csv is not None:
-                goal = tuple(trials_csv.loc[run_id, ["x_plan", "y_plan", ]].astype(float))
-                final = tuple(trials_csv.loc[run_id, ["x_real", "y_real", ]].astype(float))
-                dx = float(goal[0] - final[0])
-                dy = float(goal[1] - final[1])
-                max_abs_xy = max(abs(dx), abs(dy))
-                success = (max_abs_xy <= self.pos_success_tol)
-                pos_err = max_abs_xy
-                #pos_err = float(np.linalg.norm(np.array(final) - np.array(goal)))
-                #success = pos_err <= self.pos_success_tol
-            else:
-                goal = (float('nan'), float('nan'))
-                final = (float('nan'), float('nan'))
-                pos_err = float('nan')
-                success = False
+            # success check
+            tol = self.pos_success_tol
+            res = self.compute_run_success(run_id, X_run, feat_names, trials_csv, tol)
+            success = bool(res["success"])
+            pos_err = float(res["pos_err"])
+            goal = (float(res["goal"][0]), float(res["goal"][1]), float("nan"))
+            final = (float(res["final"][0]), float(res["final"][1]), float("nan"))
 
             traces.append(RunTrace(
                 run_id=run_id,
@@ -195,10 +192,112 @@ class BehavioralAnalyzer:
                 comp.setdefault("gripper", {})["state"] = idx
         return comp
 
-    def _detect_runs(self, skills: np.ndarray) -> List[Tuple[int, int]]:
+    def _get_col_index(self, names, key):
+        try:
+            return names.index(key)
+        except ValueError:
+            return None
+
+    def _success_from_csv(self, trials_csv, run_id, tol):
+        if trials_csv is None or run_id not in trials_csv.index:
+            return None
+        goal = tuple(trials_csv.loc[run_id, ["x_plan", "y_plan"]].astype(float))
+        final = tuple(trials_csv.loc[run_id, ["x_real", "y_real"]].astype(float))
+        dx, dy = float(goal[0] - final[0]), float(goal[1] - final[1])
+        max_abs_xy = max(abs(dx), abs(dy))
+        return {
+            "success": (max_abs_xy <= tol),
+            "pos_err": max_abs_xy,
+            "goal": goal,
+            "final": final,
+            "source": "csv",
+        }
+
+    def _success_from_cxcy(self, X_run, feat_names, tol, target_xy=(0.20, -0.15)):
+        if X_run is None or len(X_run) == 0 or not feat_names:
+            return None
+        i_cx = self._get_col_index(feat_names, "cx")
+        i_cy = self._get_col_index(feat_names, "cy")
+        if i_cx is None or i_cy is None:
+            return None
+        cx_last = float(X_run[-1, i_cx])
+        cy_last = float(X_run[-1, i_cy])
+        gx, gy = map(float, target_xy)
+        dx, dy = gx - cx_last, gy - cy_last
+        max_abs_xy = max(abs(dx), abs(dy))
+        return {
+            "success": (max_abs_xy <= tol),
+            "pos_err": max_abs_xy,
+            "goal": (gx, gy),
+            "final": (cx_last, cy_last),
+            "source": "features_cxcy_last",
+        }
+
+    def compute_run_success(self, run_id, X_run, feat_names, trials_csv, tol):
+        """
+        Returns dict with keys: success (bool), pos_err (float), goal (xy), final (xy), source (str)
+        If neither source is available, returns success=False and pos_err=nan with source='none'.
+        """
+        out = self._success_from_csv(trials_csv, run_id, tol)
+        if out is not None:
+            return out
+
+        out = self._success_from_cxcy(X_run, feat_names, tol)
+        if out is not None:
+            return out
+
+        # fallback: nothing available
+        return {
+            "success": False,  # or None if you prefer tri-state
+            "pos_err": float("nan"),
+            "goal": (float("nan"), float("nan")),
+            "final": (float("nan"), float("nan")),
+            "source": "none",
+        }
+
+    def _detect_runs_from_episode_labels(self, ep_labels: np.ndarray) -> List[Tuple[int, int]]:
+        """
+        Treat ep_labels as per-sample run/episode IDs (e.g., 0,1,2,... or any integers).
+        Returns contiguous bounds (start_idx, end_idx) for each constant-ID block,
+        skipping invalid markers (NaN / -1).
+        """
+
+        lab = np.asarray(ep_labels).reshape(-1)
+        n = lab.size
+        bounds: List[Tuple[int, int]] = []
+        i = 0
+
+        is_valid = np.isfinite(lab)
+
+        # mark invalids (NaN) and ignore negative IDs like -1
+        def valid_idx(k):
+            return (k < n) and is_valid[k] and (lab[k] >= 0)
+
+        while i < n:
+            # find next valid start
+            while i < n and not valid_idx(i):
+                i += 1
+            if i >= n:
+                break
+            s = i
+            curr = lab[i]
+            i += 1
+            # advance while same episode id and valid
+            while i < n and valid_idx(i) and lab[i] == curr:
+                i += 1
+            e = i - 1
+            bounds.append((int(s), int(e)))
+        return bounds
+
+    def _detect_runs(self, skills: np.ndarray, episode_labels: Optional[np.array]) -> List[Tuple[int, int]]:
         """
         Start at first 0/1 after previous run, end at the LAST 4 before the next 0/1 (or EOF).
         """
+        # --- Prefer explicit episode labels if provided ---
+        if episode_labels is not None:
+            return self._detect_runs_from_episode_labels(episode_labels)
+
+
         STARTS = {0, 1}
         n = len(skills);
         bounds = []
@@ -1061,57 +1160,231 @@ class BehavioralAnalyzer:
     #     df = pd.DataFrame(rows)
     #     return df
 
-    def assess_failure_from_bands(self, traces, effort_mode: Optional[str] = None, beta: Optional[float] = None):
-        """
-        Compute P_fail(skill, component) using velocity bands, optionally modulated by effort.
-        Parameters:
-            effort_mode:
-                - "off":      ignore effort completely (legacy behavior)
-                - "modifier": use velocity band times ONLY; multiply hazard by EffortFactor
-                - "override": active time = union(vel_active, eff_active); rescale velocity fractions to union
-            beta:
-                Strength of effort factor blending in "modifier"/"override":
-                    EffortFactor = (1 - beta) + beta * ( Σ_j eff_frac_j * m_eff_j )
+    # def assess_failure_from_bands(self, traces, effort_mode: Optional[str] = None, beta: Optional[float] = None):
+    #     """
+    #     Compute P_fail(skill, component) using velocity bands, optionally modulated by effort.
+    #     Parameters:
+    #         effort_mode:
+    #             - "off":      ignore effort completely (legacy behavior)
+    #             - "modifier": use velocity band times ONLY; multiply hazard by EffortFactor
+    #             - "override": active time = union(vel_active, eff_active); rescale velocity fractions to union
+    #         beta:
+    #             Strength of effort factor blending in "modifier"/"override":
+    #                 EffortFactor = (1 - beta) + beta * ( Σ_j eff_frac_j * m_eff_j )
+    #
+    #     Returns DataFrame with columns:
+    #         [skill, component, p0_per_min, lambda0_per_s,
+    #          time_low_sec, time_med_sec, time_high_sec,
+    #          m_low, m_med, m_high, eff_mode, eff_factor, union_active_time_sec,
+    #          hazard, p_fail]
+    #     """
+    #     mode = (effort_mode or getattr(self, "default_effort_mode", "off")).lower()
+    #     beta = getattr(self, "effort_beta", 1.0) if beta is None else float(beta)
+    #
+    #     summary = self.summarize(traces)
+    #     bands = summary.get("velocity_bands", pd.DataFrame()).copy()
+    #     if bands.empty:
+    #         return pd.DataFrame(columns=[
+    #             "skill","component","p0_per_min","lambda0_per_s",
+    #             "time_low_sec","time_med_sec","time_high_sec",
+    #             "m_low","m_med","m_high","eff_mode","eff_factor","union_active_time_sec",
+    #             "hazard","p_fail"
+    #         ])
+    #
+    #     etab = summary.get("effort_bands", pd.DataFrame()).copy()
+    #     if etab.empty:
+    #         etab = pd.DataFrame(columns=[
+    #             "skill","component","eff_time_low_sec","eff_time_med_sec","eff_time_high_sec",
+    #             "eff_active_time_sec","eff_frac_low","eff_frac_med","eff_frac_high"
+    #         ])
+    #         etab["skill"] = bands["skill"]
+    #         etab["component"] = bands["component"]
+    #         etab = etab.fillna(0.0)
+    #
+    #     tab = pd.merge(bands, etab, on=["skill","component"], how="left").fillna(0.0)
+    #
+    #     mL, mM, mH = self.vel_band_multipliers
+    #     eL, eM, eH = getattr(self, "eff_band_multipliers", (1.0,1.0,1.0))
+    #
+    #     rows = []
+    #     for _, r in tab.iterrows():
+    #         comp = r["component"]
+    #
+    #         # base probability lookup with fallbacks
+    #         p0 = 0.0
+    #         if hasattr(self, "base_prob_per_minute"):
+    #             if comp in self.base_prob_per_minute:
+    #                 p0 = float(self.base_prob_per_minute[comp])
+    #             elif comp.startswith("j") and ("joint" in self.base_prob_per_minute):
+    #                 p0 = float(self.base_prob_per_minute["joint"])
+    #             else:
+    #                 p0 = float(self.base_prob_per_minute.get("default", 0.0))
+    #         if p0 <= 0.0:
+    #             # skip if no base rate available
+    #             continue
+    #
+    #         lambda0 = -np.log(max(1.0 - p0, 1e-12)) / 60.0
+    #
+    #         # velocity exposure (no effort added here)
+    #         tL = float(r.get("time_low_sec", 0.0))
+    #         tM = float(r.get("time_med_sec", 0.0))
+    #         tH = float(r.get("time_high_sec", 0.0))
+    #         tV = float(r.get("moving_time_sec", 0.0))
+    #
+    #         if tV <= 0.0:
+    #             rows.append(dict(
+    #                 skill=r["skill"], component=comp, p0_per_min=p0, lambda0_per_s=lambda0,
+    #                 time_low_sec=0.0, time_med_sec=0.0, time_high_sec=0.0,
+    #                 m_low=mL, m_med=mM, m_high=mH,
+    #                 eff_mode=mode, eff_factor=1.0, union_active_time_sec=max(tV, float(r.get("eff_active_time_sec", 0.0))),
+    #                 hazard=0.0, p_fail=0.0
+    #             ))
+    #             continue
+    #
+    #         hazard_vel = lambda0 * (mL * tL + mM * tM + mH * tH)
+    #
+    #         # EffortFactor from fractions (dimensionless)
+    #         eff_factor = 1.0
+    #         if mode in ("modifier", "override"):
+    #             eat = float(r.get("eff_active_time_sec", 0.0))
+    #             if eat > 0.0:
+    #                 efL = float(r.get("eff_frac_low", 0.0))
+    #                 efM = float(r.get("eff_frac_med", 0.0))
+    #                 efH = float(r.get("eff_frac_high", 0.0))
+    #                 e_avg = (efL*eL) + (efM*eM) + (efH*eH)
+    #                 eff_factor = (1.0 - beta) + beta * e_avg
+    #             else:
+    #                 eff_factor = 1.0
+    #
+    #         union_active = float(max(tV, float(r.get("eff_active_time_sec", 0.0))))
+    #         if mode == "override" and union_active > 0 and tV > 0:
+    #             # rescale velocity fractions to union time (no double counting)
+    #             fL = tL / tV
+    #             fM = tM / tV
+    #             fH = tH / tV
+    #             tL_u = fL * union_active
+    #             tM_u = fM * union_active
+    #             tH_u = fH * union_active
+    #             hazard = lambda0 * (mL*tL_u + mM*tM_u + mH*tH_u) * eff_factor
+    #         elif mode == "modifier":
+    #             hazard = hazard_vel * eff_factor
+    #         else:
+    #             hazard = hazard_vel
+    #             union_active = tV
+    #
+    #         p_fail = 1.0 - np.exp(-hazard)
+    #
+    #         rows.append(dict(
+    #             skill=r["skill"], component=comp, p0_per_min=p0, lambda0_per_s=lambda0,
+    #             time_low_sec=tL, time_med_sec=tM, time_high_sec=tH,
+    #             m_low=mL, m_med=mM, m_high=mH,
+    #             eff_mode=mode, eff_factor=eff_factor, union_active_time_sec=union_active,
+    #             hazard=hazard, p_fail=p_fail
+    #         ))
+    #
+    #     return pd.DataFrame(rows)
 
-        Returns DataFrame with columns:
-            [skill, component, p0_per_min, lambda0_per_s,
-             time_low_sec, time_med_sec, time_high_sec,
-             m_low, m_med, m_high, eff_mode, eff_factor, union_active_time_sec,
-             hazard, p_fail]
+    # def assess_failure_for_gripper(self, traces):
+    #     """Compute gripper p_fail(skill) using active_time_sec only."""
+    #     runs_df, segments_df, components_df = self.to_frames(traces)
+    #
+    #     g = components_df[components_df["component"] == "gripper"]
+    #     if g.empty:
+    #         return pd.DataFrame(
+    #             columns=["skill", "component", "active_time_sec", "p0_per_min", "lambda0_per_s", "hazard", "p_fail"])
+    #
+    #     agg = g.groupby(["skill", "component"], as_index=False)["active_time_sec"].sum()
+    #
+    #     p0 = self.base_prob_per_minute.get("gripper")
+    #     if p0 is None:
+    #         raise ValueError("No base probability for 'gripper' (and no 'default'). Provide it in the JSON.")
+    #
+    #     lambda0 = -np.log(max(1.0 - p0, 1e-12)) / 60.0
+    #     agg["p0_per_min"] = p0
+    #     agg["lambda0_per_s"] = lambda0
+    #     agg["hazard"] = lambda0 * agg["active_time_sec"]
+    #     agg["p_fail"] = 1.0 - np.exp(-agg["hazard"])
+    #     return agg
+
+    def _avg_skill_time_from_summary(self, summary) -> dict:
+        import pandas as pd
+        st = summary.get("skill_time", pd.DataFrame())
+        if not isinstance(st, pd.DataFrame) or "skill" not in st.columns:
+            raise KeyError("summary['skill_time'] missing or malformed.")
+        # prefer explicit per-episode avg
+        col = "avg_time_per_episode_sec"
+        if col not in st.columns:
+            raise KeyError(f"'skill_time' must contain '{col}'.")
+        return dict(zip(st["skill"], st[col].astype(float)))
+
+    def assess_failure_from_bands(self, traces, effort_mode: str = "modifier", beta: float = 1.0):
         """
-        mode = (effort_mode or getattr(self, "default_effort_mode", "off")).lower()
+        Exposure = avg_time_per_episode(skill) from summary['skill_time'].
+        That average is allocated into velocity bands using velocity_bands' FRACTIONS.
+        Effort handled via 'modifier' (default) or 'override' as a multiplicative factor from effort FRACTIONS.
+
+        Returns DataFrame:
+          [skill, component, t_avg_skill_sec,
+           vel_frac_low, vel_frac_med, vel_frac_high,
+           eff_frac_low, eff_frac_med, eff_frac_high,
+           p0_per_min, lambda0_per_s, m_low, m_med, m_high,
+           eff_mode, eff_factor, hazard, p_fail]
+        """
+        import numpy as np
+        import pandas as pd
+
+        mode = (effort_mode or getattr(self, "default_effort_mode", "modifier")).lower()
         beta = getattr(self, "effort_beta", 1.0) if beta is None else float(beta)
 
         summary = self.summarize(traces)
+
+        # 1) avg per-episode skill times (aligns with PRISM)
+        avg_skill_time = self._avg_skill_time_from_summary(summary)  # {skill: seconds}
+
+        # 2) velocity band FRACTIONS (already computed by summarize)
         bands = summary.get("velocity_bands", pd.DataFrame()).copy()
         if bands.empty:
             return pd.DataFrame(columns=[
-                "skill","component","p0_per_min","lambda0_per_s",
-                "time_low_sec","time_med_sec","time_high_sec",
-                "m_low","m_med","m_high","eff_mode","eff_factor","union_active_time_sec",
-                "hazard","p_fail"
+                "skill", "component", "t_avg_skill_sec",
+                "vel_frac_low", "vel_frac_med", "vel_frac_high",
+                "eff_frac_low", "eff_frac_med", "eff_frac_high",
+                "p0_per_min", "lambda0_per_s", "m_low", "m_med", "m_high",
+                "eff_mode", "eff_factor", "hazard", "p_fail"
             ])
 
-        etab = summary.get("effort_bands", pd.DataFrame()).copy()
-        if etab.empty:
-            etab = pd.DataFrame(columns=[
-                "skill","component","eff_time_low_sec","eff_time_med_sec","eff_time_high_sec",
-                "eff_active_time_sec","eff_frac_low","eff_frac_med","eff_frac_high"
-            ])
-            etab["skill"] = bands["skill"]
-            etab["component"] = bands["component"]
-            etab = etab.fillna(0.0)
+        # 3) effort FRACTIONS (optional)
+        effort = summary.get("effort_bands", pd.DataFrame()).copy()
+        if effort.empty:
+            effort = pd.DataFrame({"skill": bands["skill"], "component": bands["component"],
+                                   "eff_frac_low": 0.0, "eff_frac_med": 0.0, "eff_frac_high": 0.0})
+        else:
+            # ensure columns exist
+            for c in ("eff_frac_low", "eff_frac_med", "eff_frac_high"):
+                if c not in effort.columns:
+                    effort[c] = 0.0
 
-        tab = pd.merge(bands, etab, on=["skill","component"], how="left").fillna(0.0)
+        # Merge velocity & effort fractions
+        need_cols = ["skill", "component",
+                     "frac_low_of_moving", "frac_med_of_moving", "frac_high_of_moving"]
+        for c in need_cols:
+            if c not in bands.columns:
+                bands[c] = 0.0
+
+        tab = pd.merge(
+            bands[["skill", "component", "frac_low_of_moving", "frac_med_of_moving", "frac_high_of_moving"]],
+            effort[["skill", "component", "eff_frac_low", "eff_frac_med", "eff_frac_high"]],
+            on=["skill", "component"], how="left"
+        ).fillna(0.0)
 
         mL, mM, mH = self.vel_band_multipliers
-        eL, eM, eH = getattr(self, "eff_band_multipliers", (1.0,1.0,1.0))
+        eL, eM, eH = getattr(self, "eff_band_multipliers", (1.0, 1.0, 1.0))
 
         rows = []
         for _, r in tab.iterrows():
+            skill = r["skill"];
             comp = r["component"]
 
-            # base probability lookup with fallbacks
+            # base probability lookup (per-minute)
             p0 = 0.0
             if hasattr(self, "base_prob_per_minute"):
                 if comp in self.base_prob_per_minute:
@@ -1121,91 +1394,120 @@ class BehavioralAnalyzer:
                 else:
                     p0 = float(self.base_prob_per_minute.get("default", 0.0))
             if p0 <= 0.0:
-                # skip if no base rate available
                 continue
 
-            lambda0 = -np.log(max(1.0 - p0, 1e-12)) / 60.0
+            lambda0 = -np.log(max(1.0 - p0, 1e-12)) / 60.0  # per-second
 
-            # velocity exposure (no effort added here)
-            tL = float(r.get("time_low_sec", 0.0))
-            tM = float(r.get("time_med_sec", 0.0))
-            tH = float(r.get("time_high_sec", 0.0))
-            tV = float(r.get("moving_time_sec", 0.0))
-
-            if tV <= 0.0:
+            # avg skill time (per-episode)
+            t_avg = float(avg_skill_time.get(skill, 0.0))
+            if t_avg <= 0.0:
                 rows.append(dict(
-                    skill=r["skill"], component=comp, p0_per_min=p0, lambda0_per_s=lambda0,
-                    time_low_sec=0.0, time_med_sec=0.0, time_high_sec=0.0,
+                    skill=skill, component=comp, t_avg_skill_sec=0.0,
+                    vel_frac_low=0.0, vel_frac_med=0.0, vel_frac_high=0.0,
+                    eff_frac_low=float(r.get("eff_frac_low", 0.0)),
+                    eff_frac_med=float(r.get("eff_frac_med", 0.0)),
+                    eff_frac_high=float(r.get("eff_frac_high", 0.0)),
+                    p0_per_min=p0, lambda0_per_s=lambda0,
                     m_low=mL, m_med=mM, m_high=mH,
-                    eff_mode=mode, eff_factor=1.0, union_active_time_sec=max(tV, float(r.get("eff_active_time_sec", 0.0))),
+                    eff_mode=mode, eff_factor=1.0,
                     hazard=0.0, p_fail=0.0
                 ))
                 continue
 
+            # velocity fractions (already normalized per summarize)
+            fL = float(r["frac_low_of_moving"])
+            fM = float(r["frac_med_of_moving"])
+            fH = float(r["frac_high_of_moving"])
+
+            # safety: clip and renormalize small drifts
+            vec = np.array([max(0.0, fL), max(0.0, fM), max(0.0, fH)], dtype=float)
+            s = vec.sum()
+            if s > 0:
+                vec /= s
+            fL, fM, fH = vec.tolist()
+
+            # allocate avg skill time into bands
+            tL = t_avg * fL
+            tM = t_avg * fM
+            tH = t_avg * fH
+
             hazard_vel = lambda0 * (mL * tL + mM * tM + mH * tH)
 
-            # EffortFactor from fractions (dimensionless)
+            # effort factor from fractions
+            efL = float(r.get("eff_frac_low", 0.0))
+            efM = float(r.get("eff_frac_med", 0.0))
+            efH = float(r.get("eff_frac_high", 0.0))
+
             eff_factor = 1.0
             if mode in ("modifier", "override"):
-                eat = float(r.get("eff_active_time_sec", 0.0))
-                if eat > 0.0:
-                    efL = float(r.get("eff_frac_low", 0.0))
-                    efM = float(r.get("eff_frac_med", 0.0))
-                    efH = float(r.get("eff_frac_high", 0.0))
-                    e_avg = (efL*eL) + (efM*eM) + (efH*eH)
+                sum_eff = efL + efM + efH
+                if sum_eff > 1e-9:
+                    # normalize fractions just in case
+                    efL, efM, efH = efL / sum_eff, efM / sum_eff, efH / sum_eff
+                    e_avg = (efL * eL) + (efM * eM) + (efH * eH)
                     eff_factor = (1.0 - beta) + beta * e_avg
                 else:
+                    # no effort data -> neutral factor
                     eff_factor = 1.0
 
-            union_active = float(max(tV, float(r.get("eff_active_time_sec", 0.0))))
-            if mode == "override" and union_active > 0 and tV > 0:
-                # rescale velocity fractions to union time (no double counting)
-                fL = tL / tV
-                fM = tM / tV
-                fH = tH / tV
-                tL_u = fL * union_active
-                tM_u = fM * union_active
-                tH_u = fH * union_active
-                hazard = lambda0 * (mL*tL_u + mM*tM_u + mH*tH_u) * eff_factor
-            elif mode == "modifier":
-                hazard = hazard_vel * eff_factor
-            else:
-                hazard = hazard_vel
-                union_active = tV
-
+            # 'override' keeps the same semantics (multiplicative on the per-episode allocation)
+            hazard = hazard_vel * (eff_factor if mode in ("modifier", "override") else 1.0)
             p_fail = 1.0 - np.exp(-hazard)
 
             rows.append(dict(
-                skill=r["skill"], component=comp, p0_per_min=p0, lambda0_per_s=lambda0,
-                time_low_sec=tL, time_med_sec=tM, time_high_sec=tH,
+                skill=skill, component=comp, t_avg_skill_sec=t_avg,
+                vel_frac_low=fL, vel_frac_med=fM, vel_frac_high=fH,
+                eff_frac_low=efL, eff_frac_med=efM, eff_frac_high=efH,
+                p0_per_min=p0, lambda0_per_s=lambda0,
                 m_low=mL, m_med=mM, m_high=mH,
-                eff_mode=mode, eff_factor=eff_factor, union_active_time_sec=union_active,
+                eff_mode=mode, eff_factor=eff_factor,
                 hazard=hazard, p_fail=p_fail
             ))
 
         return pd.DataFrame(rows)
 
     def assess_failure_for_gripper(self, traces):
-        """Compute gripper p_fail(skill) using active_time_sec only."""
-        runs_df, segments_df, components_df = self.to_frames(traces)
+        """
+        P_fail(skill, 'gripper') using avg per-episode gripper active time from summary['comp_usage'].
+        This aligns FT exposure with PRISM rewards (per-episode averages).
+        """
+        import numpy as np
+        import pandas as pd
 
-        g = components_df[components_df["component"] == "gripper"]
+        summary = self.summarize(traces)
+        cu = summary.get("comp_usage", pd.DataFrame()).copy()
+        if cu.empty:
+            return pd.DataFrame(columns=[
+                "skill", "component", "avg_active_time_per_episode_sec",
+                "p0_per_min", "lambda0_per_s", "hazard", "p_fail"
+            ])
+
+        g = cu[cu["component"] == "gripper"]
         if g.empty:
-            return pd.DataFrame(
-                columns=["skill", "component", "active_time_sec", "p0_per_min", "lambda0_per_s", "hazard", "p_fail"])
+            return pd.DataFrame(columns=[
+                "skill", "component", "avg_active_time_per_episode_sec",
+                "p0_per_min", "lambda0_per_s", "hazard", "p_fail"
+            ])
 
-        agg = g.groupby(["skill", "component"], as_index=False)["active_time_sec"].sum()
+        # comp_usage already gives per-episode mean active time
+        out = g[["skill", "component", "avg_active_time_sec"]].rename(
+            columns={"avg_active_time_sec": "avg_active_time_per_episode_sec"}
+        ).copy()
 
-        p0 = self.base_prob_per_minute.get("gripper")
+        # base rate
+        p0 = None
+        if hasattr(self, "base_prob_per_minute"):
+            p0 = self.base_prob_per_minute.get("gripper", self.base_prob_per_minute.get("default"))
         if p0 is None:
-            raise ValueError("No base probability for 'gripper' (and no 'default'). Provide it in the JSON.")
+            raise ValueError("No base probability for 'gripper'. Provide it in base_prob_per_minute.")
 
-        lambda0 = -np.log(max(1.0 - p0, 1e-12)) / 60.0
-        agg["p0_per_min"] = p0
-        agg["lambda0_per_s"] = lambda0
-        agg["hazard"] = lambda0 * agg["active_time_sec"]
-        agg["p_fail"] = 1.0 - np.exp(-agg["hazard"])
-        return agg
+        lambda0 = -np.log(max(1.0 - float(p0), 1e-12)) / 60.0
+        out["p0_per_min"] = float(p0)
+        out["lambda0_per_s"] = lambda0
+        out["hazard"] = lambda0 * out["avg_active_time_per_episode_sec"].astype(float)
+        out["p_fail"] = 1.0 - np.exp(-out["hazard"])
+        return out[["skill", "component", "avg_active_time_per_episode_sec", "p0_per_min", "lambda0_per_s", "hazard",
+                    "p_fail"]]
 
     def load_base_probs_from_json(self, path: str, *, add_defaults: bool = True):
         """

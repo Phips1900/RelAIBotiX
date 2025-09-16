@@ -389,13 +389,120 @@ class MarkovChain:
         # No extra normalization needed: (done_alpha + sum(cnt))/Z == 1
         return w
 
+    def _empirical_survival_weights(
+            self,
+            summary: Dict[str, pd.DataFrame],
+            canonical_order: List[str],
+            *,
+            min_count: int = 1,  # only keep edges observed at least this many times
+            min_frac: float = 0.0  # or keep edges with freq >= this fraction of outgoing
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Build per-state survival weights from observed sequences.
+        Returns: {src: {dst: w, ...}, ...}, only for dst in canonical_order and src!=absorbing.
+        We exclude absorbing labels; we allow backward edges and self-loops if they were observed.
+        """
+        seq_df = summary["sequences"]  # columns: sequence, count, ...
+        states = set(canonical_order)
+        # count bigrams
+        from collections import defaultdict
+        out_counts = defaultdict(lambda: defaultdict(int))
+        for _, row in seq_df.iterrows():
+            seq = str(row["sequence"])
+            c = int(row["count"])
+            toks = [t.strip() for t in seq.split(" > ") if t.strip()]
+            for i in range(len(toks) - 1):
+                s, t = toks[i], toks[i + 1]
+                # keep only transitions between modeled operational states
+                if s in states and t in states:
+                    out_counts[s][t] += c
+
+        # normalize with thresholds
+        weights = {}
+        for s, dsts in out_counts.items():
+            total = sum(dsts.values())
+            if total <= 0:
+                continue
+            # apply thresholds
+            kept = {d: cnt for d, cnt in dsts.items()
+                    if cnt >= min_count and (cnt / total) >= min_frac}
+            if not kept:
+                continue
+            z = float(sum(kept.values()))
+            weights[s] = {d: cnt / z for d, cnt in kept.items()}
+        return weights
+
+    def _build_symbolic_transitions_with_weights(
+            self,
+            *,
+            place_done_alpha: float,
+            survival_weights: Dict[str, Dict[str, float]],
+            start_mix: Dict[str, float],
+    ) -> None:
+        """
+        Build self.transitions with strings, using empirical survival weights (loops included)
+        when available; otherwise fall back to the linear chain. The last state's survival is
+        split among observed successors and a smoothed 'done' branch.
+        """
+        self.transitions.clear()
+        last = self.states[-1] if self.states else None
+
+        # smoothing for 'done' + restarts after the last op
+        Z = float(sum(start_mix.values()) + place_done_alpha)
+        done_w = float(place_done_alpha) / Z
+        restart_w = {s: float(p) / Z for s, p in start_mix.items()}
+
+        for i, s in enumerate(self.states):
+            self.transitions[s] = {}
+            fail_tok = f"{s}_failure"
+            surv_tok = f"(1 - {fail_tok})"
+
+            # failure arc
+            self.transitions[s][fail_tok] = fail_tok
+
+            if s in survival_weights:
+                # use observed outgoing edges (loops allowed)
+                for d, w in survival_weights[s].items():
+                    self.transitions[s][d] = f"{w}*{surv_tok}"
+            else:
+                # fallback: linear forward
+                if s != last:
+                    nxt = self.states[i + 1]
+                    self.transitions[s][nxt] = surv_tok
+                else:
+                    # last without empirical weights → Done + restarts
+                    if "done" in self.absorbing_states:
+                        self.transitions[s]["done"] = f"{done_w}*{surv_tok}"
+                    for d, w in restart_w.items():
+                        if d in self.states:
+                            self.transitions[s][d] = f"{w}*{surv_tok}"
+
+            # special handling for last state if we DO have empirical weights:
+            if s == last and s in survival_weights:
+                base = dict(survival_weights[s])  # observed successors among states
+                total = sum(base.values())
+                if total > 0.0:
+                    # scale to leave room for 'done'
+                    scale = (1.0 - done_w) / total
+                    if "done" in self.absorbing_states:
+                        self.transitions[s]["done"] = f"{done_w}*{surv_tok}"
+                    for d, w in base.items():
+                        self.transitions[s][d] = f"{w * scale}*{surv_tok}"
+
+        # absorbing self-loops
+        for a in self.absorbing_states:
+            self.transitions[a] = {a: 1.0}
+
     def build_from_analyzer(
             self,
             summary: Dict[str, pd.DataFrame],
             failure_per_skill: Dict[str, float] = None,
             *,
             canonical_order: Optional[List[str]] = None,
-            done_alpha: float = 1.0
+            done_alpha: float = 1.0,
+            allow_loops: bool = True,
+            min_count: int = 1,
+            min_frac: float = 0.0,
     ) -> None:
         """
         Auto-build the DTMC from analyzer summaries and per-skill failure probabilities.
@@ -427,18 +534,40 @@ class MarkovChain:
         # (optional) keep adjacency for inspection
         self._build_edges_for_linear_flow(start_mix_keys=list(start_mix.keys()))
 
-        # 3) Place/last-skill exit weights (Done + restart mix)
-        place_weights = self._place_exit_weights(summary, done_alpha=done_alpha)
+        # # 3) Place/last-skill exit weights (Done + restart mix)
+        # place_weights = self._place_exit_weights(summary, done_alpha=done_alpha)
+        #
+        # # 4) Build transitions
+        # if failure_per_skill is None:
+        #     # symbolic: strings like "Move_failure", "w*(1 - Place_failure)"
+        #     self._build_symbolic_transitions(place_weights)
+        #     self.P = None  # no numeric matrix yet; call compile_with_failures later
+        # else:
+        #     # numeric: bind FT probabilities now
+        #     self._build_numeric_transitions(failure_per_skill, place_weights)
+        #     # 5) Compile numeric matrix & validate
+        #     self._compile_numeric()
+        #     self._validate_rows()
 
-        # 4) Build transitions
         if failure_per_skill is None:
-            # symbolic: strings like "Move_failure", "w*(1 - Place_failure)"
-            self._build_symbolic_transitions(place_weights)
-            self.P = None  # no numeric matrix yet; call compile_with_failures later
+            if allow_loops:
+                surv_w = self._empirical_survival_weights(
+                    summary, canonical_order, min_count=min_count, min_frac=min_frac
+                )
+                self._build_symbolic_transitions_with_weights(
+                    place_done_alpha=done_alpha,
+                    survival_weights=surv_w,
+                    start_mix=start_mix,
+                )
+            else:
+                # original linear symbolic builder
+                place_weights = self._place_exit_weights(summary, done_alpha=done_alpha)
+                self._build_symbolic_transitions(place_weights)
+            self.P = None
         else:
-            # numeric: bind FT probabilities now
+            # numeric path as you already have (you can also plug the weighted version from earlier)
+            place_weights = self._place_exit_weights(summary, done_alpha=done_alpha)
             self._build_numeric_transitions(failure_per_skill, place_weights)
-            # 5) Compile numeric matrix & validate
             self._compile_numeric()
             self._validate_rows()
 

@@ -72,12 +72,13 @@ def augment_failure_table_with_always_active(
     name_map = name_map or {}
     if "skill_time" not in summary:
         raise ValueError("summary['skill_time'] missing. Run summarize() first.")
-    st = summary["skill_time"][["skill", "total_time_sec"]].copy()
+    st = summary["skill_time"][["skill", "avg_time_per_episode_sec"]].copy()
 
     rows = []
     for _, r in st.iterrows():
         skill = r["skill"];
-        T = float(r["total_time_sec"])
+        # T = float(r["total_time_sec"])
+        T = float(r["avg_time_per_episode_sec"])
         for comp_json in components_to_add:
             comp_ft = name_map.get(comp_json, comp_json)
             if comp_json not in base_p_per_min:
