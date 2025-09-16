@@ -1,0 +1,611 @@
+{
+  "name": "RelAIBotiX - ACT",
+  "system_failure_prob": 7.7037587974962e-08,
+  "task_success_rate_percent": 95.0,
+  "base_probs_per_min": {
+    "j1": 3.577e-08,
+    "j2": 3.577e-08,
+    "j3": 3.577e-08,
+    "j4": 3.577e-08,
+    "j5": 3.577e-08,
+    "gripper": 2.344e-08,
+    "controller": 2.167e-10,
+    "power_supply": 6.674e-08,
+    "sensors": 5.917e-08,
+    "camera": 1.029e-09
+  },
+  "skill_failure_probabilities": {
+    "Carry": 3.5529116281335417e-09,
+    "Init": 1.0175972472043007e-08,
+    "Move": 4.778751165744146e-09,
+    "Pick": 4.522861633790245e-09,
+    "Place": 9.978664192442289e-09
+  },
+  "overall": {
+    "n_runs": 20,
+    "total_run_time_sec": 118.39000000035193,
+    "success_rate_percent": 95.0
+  },
+  "skill_time": [
+    {
+      "skill": "Carry",
+      "total_time_sec": 16.16000000005962,
+      "avg_time_per_episode_sec": 0.8505263157926115,
+      "avg_time_per_run_sec": 0.8505263157926115
+    },
+    {
+      "skill": "Init",
+      "total_time_sec": 37.1500000000722,
+      "avg_time_per_episode_sec": 1.3759259259285999,
+      "avg_time_per_run_sec": 1.85750000000361
+    },
+    {
+      "skill": "Move",
+      "total_time_sec": 27.54000000007818,
+      "avg_time_per_episode_sec": 1.0200000000028955,
+      "avg_time_per_run_sec": 1.377000000003909
+    },
+    {
+      "skill": "Pick",
+      "total_time_sec": 13.100000000052656,
+      "avg_time_per_episode_sec": 0.6894736842132977,
+      "avg_time_per_run_sec": 0.6894736842132977
+    },
+    {
+      "skill": "Place",
+      "total_time_sec": 23.53000000008634,
+      "avg_time_per_episode_sec": 1.238421052636123,
+      "avg_time_per_run_sec": 1.238421052636123
+    }
+  ],
+  "component_usage": [
+    {
+      "skill": "Carry",
+      "component": "gripper",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 0.08000000000038199,
+      "avg_active_time_sec": 0.004210526315809578
+    },
+    {
+      "skill": "Carry",
+      "component": "j1",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 9.070000000034506,
+      "avg_active_time_sec": 0.4773684210544477
+    },
+    {
+      "skill": "Carry",
+      "component": "j2",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 14.460000000053483,
+      "avg_active_time_sec": 0.7610526315817623
+    },
+    {
+      "skill": "Carry",
+      "component": "j3",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 14.690000000054928,
+      "avg_active_time_sec": 0.7731578947397331
+    },
+    {
+      "skill": "Carry",
+      "component": "j4",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 14.330000000053698,
+      "avg_active_time_sec": 0.7542105263186156
+    },
+    {
+      "skill": "Carry",
+      "component": "j5",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 11.360000000042554,
+      "avg_active_time_sec": 0.5978947368443449
+    },
+    {
+      "skill": "Init",
+      "component": "gripper",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 28.900000000070794,
+      "avg_active_time_sec": 1.0703703703729923
+    },
+    {
+      "skill": "Init",
+      "component": "j1",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 33.10000000006979,
+      "avg_active_time_sec": 1.2259259259285107
+    },
+    {
+      "skill": "Init",
+      "component": "j2",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 33.53000000006717,
+      "avg_active_time_sec": 1.2418518518543396
+    },
+    {
+      "skill": "Init",
+      "component": "j3",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 33.190000000066476,
+      "avg_active_time_sec": 1.2292592592617213
+    },
+    {
+      "skill": "Init",
+      "component": "j4",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 31.580000000059908,
+      "avg_active_time_sec": 1.1696296296318485
+    },
+    {
+      "skill": "Init",
+      "component": "j5",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 31.220000000057716,
+      "avg_active_time_sec": 1.156296296298434
+    },
+    {
+      "skill": "Move",
+      "component": "gripper",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 4.560000000012532,
+      "avg_active_time_sec": 0.16888888888935302
+    },
+    {
+      "skill": "Move",
+      "component": "j1",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 20.050000000056247,
+      "avg_active_time_sec": 0.7425925925946758
+    },
+    {
+      "skill": "Move",
+      "component": "j2",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 24.800000000067687,
+      "avg_active_time_sec": 0.9185185185210254
+    },
+    {
+      "skill": "Move",
+      "component": "j3",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 25.440000000070015,
+      "avg_active_time_sec": 0.9422222222248153
+    },
+    {
+      "skill": "Move",
+      "component": "j4",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 25.470000000070563,
+      "avg_active_time_sec": 0.9433333333359468
+    },
+    {
+      "skill": "Move",
+      "component": "j5",
+      "n_episodes_skill": 27,
+      "n_active_episodes": 27,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 21.18000000005725,
+      "avg_active_time_sec": 0.7844444444465649
+    },
+    {
+      "skill": "Pick",
+      "component": "gripper",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 0,
+      "active_pct_episodes": 0.0,
+      "total_active_time_sec": 0.0,
+      "avg_active_time_sec": 0.0
+    },
+    {
+      "skill": "Pick",
+      "component": "j1",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 12.540000000051275,
+      "avg_active_time_sec": 0.6600000000026988
+    },
+    {
+      "skill": "Pick",
+      "component": "j2",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 12.550000000050172,
+      "avg_active_time_sec": 0.6605263157921143
+    },
+    {
+      "skill": "Pick",
+      "component": "j3",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 12.21000000004899,
+      "avg_active_time_sec": 0.6426315789499468
+    },
+    {
+      "skill": "Pick",
+      "component": "j4",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 12.120000000048252,
+      "avg_active_time_sec": 0.6378947368446448
+    },
+    {
+      "skill": "Pick",
+      "component": "j5",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 11.200000000044996,
+      "avg_active_time_sec": 0.5894736842128946
+    },
+    {
+      "skill": "Place",
+      "component": "gripper",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 2.6000000000101053,
+      "avg_active_time_sec": 0.13684210526368976
+    },
+    {
+      "skill": "Place",
+      "component": "j1",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 20.010000000077213,
+      "avg_active_time_sec": 1.053157894740906
+    },
+    {
+      "skill": "Place",
+      "component": "j2",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 18.180000000065366,
+      "avg_active_time_sec": 0.9568421052665982
+    },
+    {
+      "skill": "Place",
+      "component": "j3",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 18.91000000006776,
+      "avg_active_time_sec": 0.9952631578983032
+    },
+    {
+      "skill": "Place",
+      "component": "j4",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 18.85000000007043,
+      "avg_active_time_sec": 0.9921052631616016
+    },
+    {
+      "skill": "Place",
+      "component": "j5",
+      "n_episodes_skill": 19,
+      "n_active_episodes": 19,
+      "active_pct_episodes": 100.0,
+      "total_active_time_sec": 17.16000000006116,
+      "avg_active_time_sec": 0.903157894740061
+    }
+  ],
+  "velocity_bands": [
+    {
+      "skill": "Carry",
+      "component": "j1",
+      "time_low_sec": 6.900000000026134,
+      "time_med_sec": 1.7600000000069826,
+      "time_high_sec": 0.41000000000138925,
+      "moving_time_sec": 9.070000000034506,
+      "frac_low_of_moving": 0.7607497243660291,
+      "frac_med_of_moving": 0.19404630650499305,
+      "frac_high_of_moving": 0.04520396912897789
+    },
+    {
+      "skill": "Carry",
+      "component": "j2",
+      "time_low_sec": 10.990000000040183,
+      "time_med_sec": 2.5200000000094036,
+      "time_high_sec": 0.9200000000037534,
+      "moving_time_sec": 14.43000000005334,
+      "frac_low_of_moving": 0.761607761607731,
+      "frac_med_of_moving": 0.17463617463618078,
+      "frac_high_of_moving": 0.0637560637560882
+    },
+    {
+      "skill": "Carry",
+      "component": "j3",
+      "time_low_sec": 11.670000000044789,
+      "time_med_sec": 2.040000000007147,
+      "time_high_sec": 0.9800000000029918,
+      "moving_time_sec": 14.690000000054928,
+      "frac_low_of_moving": 0.7944179714092003,
+      "frac_med_of_moving": 0.13886997957791147,
+      "frac_high_of_moving": 0.06671204901288819
+    },
+    {
+      "skill": "Carry",
+      "component": "j4",
+      "time_low_sec": 10.23000000003944,
+      "time_med_sec": 2.0200000000071583,
+      "time_high_sec": 2.0800000000070984,
+      "moving_time_sec": 14.330000000053698,
+      "frac_low_of_moving": 0.7138869504536711,
+      "frac_med_of_moving": 0.14096301465454214,
+      "frac_high_of_moving": 0.14515003489178677
+    },
+    {
+      "skill": "Carry",
+      "component": "j5",
+      "time_low_sec": 11.050000000041518,
+      "time_med_sec": 0.2500000000007496,
+      "time_high_sec": 0.06000000000028649,
+      "moving_time_sec": 11.360000000042554,
+      "frac_low_of_moving": 0.9727112676056449,
+      "frac_med_of_moving": 0.022007042253504677,
+      "frac_high_of_moving": 0.005281690140850505
+    },
+    {
+      "skill": "Init",
+      "component": "j1",
+      "time_low_sec": 20.480000000043677,
+      "time_med_sec": 7.150000000012233,
+      "time_high_sec": 5.470000000013879,
+      "moving_time_sec": 33.10000000006979,
+      "frac_low_of_moving": 0.6187311178247884,
+      "frac_med_of_moving": 0.21601208459205914,
+      "frac_high_of_moving": 0.16525679758315245
+    },
+    {
+      "skill": "Init",
+      "component": "j2",
+      "time_low_sec": 8.550000000011606,
+      "time_med_sec": 6.8000000000119964,
+      "time_high_sec": 18.180000000043567,
+      "moving_time_sec": 33.53000000006717,
+      "frac_low_of_moving": 0.2549955263941091,
+      "frac_med_of_moving": 0.20280345958837978,
+      "frac_high_of_moving": 0.5422010140175111
+    },
+    {
+      "skill": "Init",
+      "component": "j3",
+      "time_low_sec": 9.660000000012733,
+      "time_med_sec": 6.600000000010979,
+      "time_high_sec": 16.900000000042834,
+      "moving_time_sec": 33.160000000066546,
+      "frac_low_of_moving": 0.291314837152996,
+      "frac_med_of_moving": 0.1990349819058424,
+      "frac_high_of_moving": 0.5096501809411615
+    },
+    {
+      "skill": "Init",
+      "component": "j4",
+      "time_low_sec": 22.880000000047968,
+      "time_med_sec": 5.8100000000096585,
+      "time_high_sec": 2.870000000002328,
+      "moving_time_sec": 31.560000000059954,
+      "frac_low_of_moving": 0.7249683143220692,
+      "frac_med_of_moving": 0.18409378960705391,
+      "frac_high_of_moving": 0.09093789607087693
+    },
+    {
+      "skill": "Init",
+      "component": "j5",
+      "time_low_sec": 20.55000000003374,
+      "time_med_sec": 5.560000000011049,
+      "time_high_sec": 5.110000000012929,
+      "moving_time_sec": 31.220000000057716,
+      "frac_low_of_moving": 0.6582319026263853,
+      "frac_med_of_moving": 0.17809096732866017,
+      "frac_high_of_moving": 0.16367713004495457
+    },
+    {
+      "skill": "Move",
+      "component": "j1",
+      "time_low_sec": 16.480000000049802,
+      "time_med_sec": 2.9700000000046067,
+      "time_high_sec": 0.5900000000017913,
+      "moving_time_sec": 20.0400000000562,
+      "frac_low_of_moving": 0.8223552894213366,
+      "frac_med_of_moving": 0.14820359281418552,
+      "frac_high_of_moving": 0.02944111776447788
+    },
+    {
+      "skill": "Move",
+      "component": "j2",
+      "time_low_sec": 16.250000000048203,
+      "time_med_sec": 4.900000000010771,
+      "time_high_sec": 3.6000000000085475,
+      "moving_time_sec": 24.75000000006752,
+      "frac_low_of_moving": 0.656565656565813,
+      "frac_med_of_moving": 0.1979797979796931,
+      "frac_high_of_moving": 0.145454545454494
+    },
+    {
+      "skill": "Move",
+      "component": "j3",
+      "time_low_sec": 17.39000000004824,
+      "time_med_sec": 5.220000000014902,
+      "time_high_sec": 2.8000000000068503,
+      "moving_time_sec": 25.410000000069992,
+      "frac_low_of_moving": 0.6843762298307886,
+      "frac_med_of_moving": 0.20543093270368057,
+      "frac_high_of_moving": 0.1101928374655308
+    },
+    {
+      "skill": "Move",
+      "component": "j4",
+      "time_low_sec": 15.970000000045363,
+      "time_med_sec": 4.380000000011743,
+      "time_high_sec": 5.1000000000133605,
+      "moving_time_sec": 25.450000000070467,
+      "frac_low_of_moving": 0.6275049115914005,
+      "frac_med_of_moving": 0.17210216110018137,
+      "frac_high_of_moving": 0.20039292730841804
+    },
+    {
+      "skill": "Move",
+      "component": "j5",
+      "time_low_sec": 20.00000000005397,
+      "time_med_sec": 1.1800000000032806,
+      "time_high_sec": 0.0,
+      "moving_time_sec": 21.18000000005725,
+      "frac_low_of_moving": 0.9442870632672289,
+      "frac_med_of_moving": 0.05571293673277106,
+      "frac_high_of_moving": 0.0
+    },
+    {
+      "skill": "Pick",
+      "component": "j1",
+      "time_low_sec": 3.5300000000138354,
+      "time_med_sec": 1.9300000000062623,
+      "time_high_sec": 7.080000000031177,
+      "moving_time_sec": 12.540000000051275,
+      "frac_low_of_moving": 0.2814992025517864,
+      "frac_med_of_moving": 0.15390749601262924,
+      "frac_high_of_moving": 0.5645933014355843
+    },
+    {
+      "skill": "Pick",
+      "component": "j2",
+      "time_low_sec": 5.880000000023493,
+      "time_med_sec": 4.220000000015518,
+      "time_high_sec": 2.450000000011161,
+      "moving_time_sec": 12.550000000050172,
+      "frac_low_of_moving": 0.4685258964143415,
+      "frac_med_of_moving": 0.3362549800795735,
+      "frac_high_of_moving": 0.19521912350608497
+    },
+    {
+      "skill": "Pick",
+      "component": "j3",
+      "time_low_sec": 7.9100000000336035,
+      "time_med_sec": 2.750000000010484,
+      "time_high_sec": 1.5500000000049008,
+      "moving_time_sec": 12.21000000004899,
+      "frac_low_of_moving": 0.6478296478298007,
+      "frac_med_of_moving": 0.2252252252251802,
+      "frac_high_of_moving": 0.126945126945019
+    },
+    {
+      "skill": "Pick",
+      "component": "j4",
+      "time_low_sec": 6.910000000029388,
+      "time_med_sec": 2.8500000000112102,
+      "time_high_sec": 2.3600000000076538,
+      "moving_time_sec": 12.120000000048252,
+      "frac_low_of_moving": 0.5701320132014751,
+      "frac_med_of_moving": 0.23514851485147392,
+      "frac_high_of_moving": 0.194719471947051
+    },
+    {
+      "skill": "Pick",
+      "component": "j5",
+      "time_low_sec": 7.6100000000278545,
+      "time_med_sec": 2.180000000010409,
+      "time_high_sec": 1.4100000000067325,
+      "moving_time_sec": 11.200000000044996,
+      "frac_low_of_moving": 0.6794642857140429,
+      "frac_med_of_moving": 0.19464285714300456,
+      "frac_high_of_moving": 0.12589285714295248
+    },
+    {
+      "skill": "Place",
+      "component": "j1",
+      "time_low_sec": 11.070000000046107,
+      "time_med_sec": 3.090000000009523,
+      "time_high_sec": 5.850000000021582,
+      "moving_time_sec": 20.010000000077213,
+      "frac_low_of_moving": 0.5532233883060166,
+      "frac_med_of_moving": 0.15442278860557718,
+      "frac_high_of_moving": 0.29235382308840624
+    },
+    {
+      "skill": "Place",
+      "component": "j2",
+      "time_low_sec": 5.470000000020088,
+      "time_med_sec": 2.9200000000099546,
+      "time_high_sec": 9.790000000035324,
+      "moving_time_sec": 18.180000000065366,
+      "frac_low_of_moving": 0.300880088008824,
+      "frac_med_of_moving": 0.16061606160613068,
+      "frac_high_of_moving": 0.5385038503850453
+    },
+    {
+      "skill": "Place",
+      "component": "j3",
+      "time_low_sec": 5.57000000001902,
+      "time_med_sec": 1.980000000007296,
+      "time_high_sec": 11.340000000041348,
+      "moving_time_sec": 18.890000000067666,
+      "frac_low_of_moving": 0.29486500794066,
+      "frac_med_of_moving": 0.10481736368449991,
+      "frac_high_of_moving": 0.6003176283748399
+    },
+    {
+      "skill": "Place",
+      "component": "j4",
+      "time_low_sec": 6.820000000024713,
+      "time_med_sec": 4.330000000017362,
+      "time_high_sec": 7.68000000002826,
+      "moving_time_sec": 18.830000000070335,
+      "frac_low_of_moving": 0.3621879978756898,
+      "frac_med_of_moving": 0.2299522039299622,
+      "frac_high_of_moving": 0.40785979819434803
+    },
+    {
+      "skill": "Place",
+      "component": "j5",
+      "time_low_sec": 13.630000000051199,
+      "time_med_sec": 2.370000000008181,
+      "time_high_sec": 1.1600000000017818,
+      "moving_time_sec": 17.16000000006116,
+      "frac_low_of_moving": 0.794289044289197,
+      "frac_med_of_moving": 0.1381118881118726,
+      "frac_high_of_moving": 0.0675990675989305
+    }
+  ],
+  "notes": ""
+}

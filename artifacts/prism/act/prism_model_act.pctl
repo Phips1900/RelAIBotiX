@@ -1,0 +1,7 @@
+P=? [ F "failure" ]
+P=? [ (! "failure") U "done" ]
+P=? [ F "Init_failure" ]
+P=? [ F "Move_failure" ]
+P=? [ F "Pick_failure" ]
+P=? [ F "Carry_failure" ]
+P=? [ F "Place_failure" ]
