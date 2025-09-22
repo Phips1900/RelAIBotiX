@@ -1,5 +1,4 @@
 # RelAIBotiX <!-- omit from toc -->
-[![linting: pylint](https://img.shields.io/badge/linting-pylint-yellowgreen)](https://github.com/pylint-dev/pylint)
 
 Dynamic Reliability Assessment Framework for AI-Controlled Robotic Systems
 
@@ -8,41 +7,112 @@ Dynamic Reliability Assessment Framework for AI-Controlled Robotic Systems
 - [Approach](#approach)
 - [Installation](#installation)
 - [Usage](#usage)
-  - [Command-line Arguments](#command-line-arguments)
-  - [Running the Analysis](#running-the-analysis)
+  - [Minimal Example](#minimal-example)
+  - [Available Commands](#available-commands)
+  - [Arguments](#arguments)
+- [License](#license)
+
+---
 
 ## Introduction
-AI-controlled robotic systems can introduce significant risks to both humans and the environment. Traditional reliability assessment methods fall short in addressing the complexities of these systems, particularly when dealing with black-box or dynamically changing control policies. These traditional approaches are applied manually and do not consider frequent software updates. 
+AI-controlled robotic systems can introduce significant risks to both humans and the environment.  
+Traditional reliability assessment methods fall short in addressing the complexities of these systems, particularly when dealing with black-box or dynamically changing control policies.  
+These traditional approaches are applied manually and do not consider frequent software updates. 
 
-RelAIBotiX presents a new methodology that enables dynamic and continuous reliability assessment, specifically tailored for robotic systems controlled by AI algorithms.
+**RelAIBotiX** presents a methodology that enables **dynamic and continuous reliability assessment**, specifically tailored for robotic systems controlled by AI algorithms.
+
+---
 
 ## Approach
 ![RelAIBotiX Framework](artifacts/figures/RelAIBotiX.png)
 
+The framework provides:
+- Fault & uncertainty injection in simulation
+- Skill detection 
+- Behavioral analysis 
+- Automatic generation of hybrid reliability models (DTMC, Fault Trees, PRISM)
+- Structured reliability reports (CSV, PDF)
 
+---
+
+## Installation
+
+We recommend using a **conda environment** to manage dependencies.
 
 ```bash
+# Create and activate environment
+conda create -n relaibotix python=3.10 -y
+conda activate relaibotix
+
+# Clone the repository
 git clone https://github.com/your-username/RelAIBotiX.git
 cd RelAIBotiX
+
+# Install requirements
 pip install -r requirements.txt
+
+# Install package in editable mode
+pip install -e .
 ```
+
+---
 
 ## Usage
 
-To run the **RelAIBotiX** framework, use the `handler.py` script.
+After installation, RelAIBotiX is available as a CLI tool.
 
-### **Command-line Arguments**
+### Minimal Example
 
-| Argument         | Description                                       | Example                                   |
-|-----------------|---------------------------------------------------|-------------------------------------------|
-| `--config`      | Path to the robot configuration JSON file         | `../config_files/franka_config.json`      |
-| `--dataset`     | Path to the dataset (.npy file)                   | `../datasets/pick_place_dataset_franka.npy` |
-| `--json_output` | Path to save the reliability report as JSON | `../output/robotic_system_openM.json`    |
-| `--spider_chart` | Path to save the generated spider chart           | `../plots/spider_chart_openM.png`        |
-| `--pdf_output`  | Path to save the PDF report                       | `../output/robot_report_openM.pdf`       |
+Run the full pipeline on a small dataset:
 
+```bash
+relaibotix --h5 datasets/IL/act/act_20.h5
+```
+
+This will produce:
+- A reliability report (PDF + JSON) in `results/reports/`
+- A PRISM model in `results/prism/`
+
+---
+
+### Available Commands
+
+The CLI supports different modes:
+
+- **Full pipeline**
+
+```bash
+relaibotix --h5 <dataset.h5> 
+```
+
+- **Skill detection only**
+
+```bash
+relaibotix_skill_detection --h5 <dataset.h5> --ckpt artifacts/checkpoints/skill_detector.ckpt
+```
+
+- **Faulty evaluation only**
+
+```bash
+relaibotix_faulty --h5 <dataset_with_faults.h5>
+```
+
+---
+
+### Arguments
+
+| Argument       | Description                                     | Default                                      |
+|----------------|-------------------------------------------------|----------------------------------------------|
+| `--h5`         | Path to the dataset in HDF5 format              | *(required)*                                 |
+| `--ckpt`       | Path to skill detector checkpoint               | `artifacts/checkpoints/skill_detector.ckpt`  |
+| `--config`     | Path to robot configuration JSON                | `config_files/robots/so_arm_config.json`     |
+| `--output`     | Output directory for reports                    | `results/reports`                            |
+| `--prism`      | Output directory for PRISM models               | `results/prism`                              |
+| `--tol`        | XY tolerance for faulty evaluation [m]          | `0.02`                                       |
+| `--target-x`   | Target X position [m]                           | `0.20`                                       |
+| `--target-y`   | Target Y position [m]                           | `-0.15`                                      |
+
+---
 
 ## License
 This project is licensed under the MIT License.
-
-
