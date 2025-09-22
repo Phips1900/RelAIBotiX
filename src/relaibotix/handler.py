@@ -1,193 +1,234 @@
-import pandas as pd
-import h5py
-from typing import Dict, Union, Any, List, Optional
-from pathlib import Path
+import argparse
 
 from relaibotix.behavioral.behavioral_analysis_v2 import *
 from relaibotix.evaluation.evaluation import *
+from relaibotix.evaluation.evaluation_faulty import *
 from relaibotix.evaluation.pdf_handler import *
 from relaibotix.reliability.prism import *
 
-H5 = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/IL/act/eval_act_mj2_faults_no1.h5")
-CKPT = Path(
-    "/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/checkpoints/il/panda_cnn_trans_lpe_X_epoch=26.ckpt")
-# out_dir = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/reports/yaskawa_sim")
-out_dir = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/reports/diffusion")
-out_dir.mkdir(parents=True, exist_ok=True)
-# out_dir_prism = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/prism/yaskawa_sim")
-out_dir_prism = Path("/Users/Phips1900/PhD/Research/RelAIBotiX/artifacts/prism/diffusion")
-out_dir_prism.mkdir(parents=True, exist_ok=True)
 
-# run_inference(h5_path=H5,
-#               checkpoint_path=CKPT,
-#               model_type="cnn_transformer",
-#               window_size=500,
-#               feature_columns=[0, 1, 2, 3, 4, 5, 6, 17],
-#               num_classes=5,
-#               batch_size=64,
-#               device="mps",
-#               out_labels_name="labels_pred",
-#               stride=1,
-#               )
+def run_relaibotix(h5_path: str,
+                   checkpoint_path: str,
+                   config_path: str,
+                   out_dir: str = "artifacts/reports",
+                   out_dir_prism: str = "artifacts/prism", ):
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir_prism = Path(out_dir_prism)
+    out_dir_prism.mkdir(parents=True, exist_ok=True)
 
-with h5py.File("/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/IL/new/eval_diffusion_mj2_.h5", "r") as f:
-    features_arr = f["features"][()]  # (N, 22)
-    # labels = f["labels"][()]  # (N,)
-    episode_labels = f["labels"][()]  # (N,)
-    # labels_pred = f["labels_pred"][()]  # (N,)
-    timestamps = f["timestamps"][()]  # (N,)
-    feat_names = [n.decode() if hasattr(n, "decode") else str(n)
-                  for n in f["features"].attrs["feature_names"]]
+    run_inference(h5_path=h5_path,
+                  checkpoint_path=checkpoint_path,
+                  model_type="cnn_transformer",
+                  window_size=500,
+                  feature_columns=[0, 1, 2, 3, 4, 5, 6, 17],
+                  num_classes=5,
+                  batch_size=64,
+                  device="mps",
+                  out_labels_name="labels_pred",
+                  stride=1,
+                  )
 
-features_df = pd.DataFrame(features_arr)
-labels = features_arr[:, 25]
+    with h5py.File(h5_path, "r") as f:
+        features_arr = f["features"][()]  # (N, 22)
+        episode_labels = f["labels"][()]  # (N,)
+        labels_pred = f["labels_pred"][()]  # (N,)
+        timestamps = f["timestamps"][()]  # (N,)
+        feat_names = [n.decode() if hasattr(n, "decode") else str(n)
+                      for n in f["features"].attrs["feature_names"]]
+    features_df = pd.DataFrame(features_arr)
+    labels_pred_filter = filter_short_segments(labels_pred)
+    an = BehavioralAnalyzer(pos_success_tol=0.02)  # tune eps_abs/dc_thr/rms_thr/range_thr later if needed
+    traces: List[RunTrace] = an.analyze(
+        features=features_df,
+        feature_names=feat_names,
+        labels=labels_pred_filter,
+        timestamps=timestamps,
+        episode_labels=episode_labels
+    )
+    summary = an.summarize(traces)
+    base_p = an.load_base_probs_from_json(config_path)
+    joint_failure_table = an.assess_failure_from_bands(traces)
+    gripper_table = an.assess_failure_for_gripper(traces)
+    failure_table = combine_failure_tables(joint_failure_table, gripper_table)
 
-# labels_pred_filter = filter_short_segments(labels_pred)
+    base_p_per_min = getattr(an, "base_prob_per_minute", {})
+    redundancy_flags = getattr(an, "redundancy", {})
 
-# report = compare_predictions(labels, labels_pred, class_names=["Init", "Move", "Pick", "Carry", "Place"])
+    failure_table_aug = augment_failure_table_with_always_active(
+        failure_table=failure_table,
+        summary=summary,
+        base_p_per_min=base_p_per_min,
+        components_to_add=["controller", "power_supply", "sensors", "camera"]
+    )
 
-# labels_df = pd.DataFrame(labels_pred)
-# labels_df.to_csv(out_dir / "labels_pred_new.csv", index=False)
+    fts = build_fault_trees_from_failure_table_basic(
+        failure_table=failure_table_aug,
+        redundancy_flags=redundancy_flags,
+        copies=2
+    )
+    hybrid_model = HybridReliabilityModel('RelAIBotiX-hybrid')
+    for ft in fts:
+        hybrid_model.add_fault_tree(ft)
+    hybrid_model.failure_table = failure_table_aug
+    hybrid_model.redundancy_map = redundancy_flags
 
-# 2) Load CSV with goal/final per run
-# trials_csv = pd.read_csv(
-#     "/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka/franka_slow_summary_30.csv")
+    ft_dict = create_ft_dict(hybrid_model)
+    mc = build_dtmc_from_summary(summary, failure_per_skill=None, done_alpha=1.0)
+    hybrid_model.add_markov_chain(mc)
 
-# 3) Analyze
-an = BehavioralAnalyzer(pos_success_tol=0.02)  # tune eps_abs/dc_thr/rms_thr/range_thr later if needed
-traces: List[RunTrace] = an.analyze(
-    features=features_df,
-    feature_names=feat_names,
-    labels=labels,
-    # labels=labels_pred,
-    timestamps=timestamps,
-    episode_labels=episode_labels
-    # trials_csv=trials_csv
-)
+    system_reliability, absorption_prob, absorption_time = hybrid_model.compute_system_reliability(ft_dict=ft_dict)
 
-summary = an.summarize(traces)
+    mc = hybrid_model.get_markov_chain()
+    prism_model, prism_props = write_prism_and_props(
+        mc,
+        out_basename=out_dir_prism / "prism_model",
+        model_name="RelAIBotiX",
+        precision=12,
+    )
+    print(f"[PRISM] wrote {prism_model} and {prism_props}")
 
-base_p = an.load_base_probs_from_json("/Users/Phips1900/PhD/Research/RelAIBotiX/config_files/robots/so_arm_config.json")
-# base_p = an.load_base_probs_from_json("/Users/Phips1900/PhD/Research/RelAIBotiX/config_files/robots/franka_config.json")
-# base_p = an.load_base_probs_from_json("/Users/Phips1900/PhD/Research/RelAIBotiX/config_files/robots/yaskawa_config.json")
+    skill_time = summary.get("skill_time", {})
+    state_time_seconds = {
+        str(r.skill): float(r.avg_time_per_episode_sec)
+        for r in skill_time.itertuples(index=False)
+    }
 
-joint_failure_table = an.assess_failure_from_bands(traces)
-gripper_table = an.assess_failure_for_gripper(traces)
-failure_table = combine_failure_tables(joint_failure_table, gripper_table)
+    write_prism_no_done_and_props(
+        mc,
+        out_basename=out_dir_prism / "prism_model_no_done",
+        state_time_seconds=state_time_seconds,
+    )
 
-base_p_per_min = getattr(an, "base_prob_per_minute", {})
-redundancy_flags = getattr(an, "redundancy", {})
+    skill_pf = skill_failure_probs_from_fts(hybrid_model)
 
-# 2) Add always-active components (controller, power_supply, sensors, camera)
-failure_table_aug = augment_failure_table_with_always_active(
-    failure_table=failure_table,
-    summary=summary,
-    base_p_per_min=base_p_per_min,
-    components_to_add=["controller", "power_supply", "sensors", "camera"]
-)
+    task_success = task_success_rate_from_summary(summary)
 
-# 3) Build FaultTrees (per-skill) with basic redundancy expansion (Controller_1/_2, ...)
-fts = build_fault_trees_from_failure_table_basic(
-    failure_table=failure_table_aug,
-    redundancy_flags=redundancy_flags,
-    copies=2
-)
-hybrid_model = HybridReliabilityModel('RelAIBotiX-hybrid')
-for ft in fts:
-    hybrid_model.add_fault_tree(ft)
-hybrid_model.failure_table = failure_table_aug
-hybrid_model.redundancy_map = redundancy_flags
+    fail_abs_states = [s for s in mc.get_absorbing_states() if s.endswith("_failure")]
+    skills = [s[:-8] for s in fail_abs_states]  # strip "_failure"
 
-ft_dict = create_ft_dict(hybrid_model)
+    probs = absorption_prob
+    if len(probs) == len(fail_abs_states) + 1:
+        probs = probs[:len(fail_abs_states)]  # drop 'done' column if present
 
-# 4) Build DTMC from summary (symbolic; bind later inside solver, or bind now if you prefer)
-mc = build_dtmc_from_summary(summary, failure_per_skill=None, done_alpha=1.0)
-hybrid_model.add_markov_chain(mc)
+    assert len(probs) == len(skills), f"length mismatch: {len(probs)} vs {len(skills)}"
 
-system_reliability, absorption_prob, absorption_time = hybrid_model.compute_system_reliability(ft_dict=ft_dict)
+    skill_absorb_fail = dict(zip(skills, map(float, probs)))
 
-mc = hybrid_model.get_markov_chain()
-prism_model, prism_props = write_prism_and_props(
-    mc,
-    out_basename=out_dir_prism / "prism_diffusion",
-    model_name="RelAIBotiX",
-    precision=12,
-)
-print(f"[PRISM] wrote {prism_model} and {prism_props}")
+    sens_df = sensitivity_analysis(failure_table=failure_table_aug, redundancy_flags=redundancy_flags, summary=summary,
+                                   factor=10.0)
 
-skill_time = summary.get("skill_time", {})
-state_time_seconds = {
-    str(r.skill): float(r.avg_time_per_episode_sec)
-    for r in skill_time.itertuples(index=False)
-}
+    sens_df.to_csv(out_dir / "sensitivity.csv", index=False)
+    plots = []
+    ft_png, ab_png = plot_skill_failures_separate(
+        ft_failure=skill_pf,
+        absorb_failure=skill_absorb_fail,
+        out_ft=out_dir / "skills_ft.png",
+        out_absorb=out_dir / "skills_absorbing.png",
+        order=skills,  # keeps bars aligned to your DTMC order
+    )
+    plots.append(ft_png)
+    plots.append(ab_png)
+    p_2 = plot_sensitivity_outcomes_spider_failure(
+        base_system_failure=system_reliability,
+        sens_df=sens_df,
+        outpath=out_dir / "sensitivity_spider.png",
+    )
+    plots.append(p_2)
+    vel_plots = plot_velocity_bands_per_skill(velocity_bands=summary.get("velocity_bands", {}), outpath=out_dir)
+    eff_plots = plot_effort_bands_per_skill(effort_bands=summary.get("effort_bands", {}), outpath=out_dir)
 
-write_prism_no_done_and_props(
-    mc,
-    out_basename=out_dir_prism / "prism_diffusion_no_done",
-    state_time_seconds=state_time_seconds,
-)
-
-# 1) Per-skill failure probs (from solved FTs)
-skill_pf = skill_failure_probs_from_fts(hybrid_model)
-
-# 2) Task success rate from analyzer summary
-task_success = task_success_rate_from_summary(summary)
-
-fail_abs_states = [s for s in mc.get_absorbing_states() if s.endswith("_failure")]
-skills = [s[:-8] for s in fail_abs_states]  # strip "_failure"
-
-probs = absorption_prob
-if len(probs) == len(fail_abs_states) + 1:
-    probs = probs[:len(fail_abs_states)]  # drop 'done' column if present
-
-assert len(probs) == len(skills), f"length mismatch: {len(probs)} vs {len(skills)}"
-
-skill_absorb_fail = dict(zip(skills, map(float, probs)))
-
-# Sensitivity
-sens_df = sensitivity_analysis(failure_table=failure_table_aug, redundancy_flags=redundancy_flags, summary=summary,
-                               factor=10.0)
-
-sens_df.to_csv(out_dir / "sensitivity.csv", index=False)
-
-plots = []
-
-# Plots
-ft_png, ab_png = plot_skill_failures_separate(
-    ft_failure=skill_pf,
-    absorb_failure=skill_absorb_fail,
-    out_ft=out_dir / "skills_ft.png",
-    out_absorb=out_dir / "skills_absorbing.png",
-    order=skills,  # keeps bars aligned to your DTMC order
-)
-plots.append(ft_png)
-plots.append(ab_png)
-
-p_2 = plot_sensitivity_outcomes_spider_failure(
-    base_system_failure=system_reliability,
-    sens_df=sens_df,
-    outpath=out_dir / "sensitivity_spider.png",
-)
-plots.append(p_2)
-
-vel_plots = plot_velocity_bands_per_skill(velocity_bands=summary.get("velocity_bands", {}), outpath=out_dir)
-eff_plots = plot_effort_bands_per_skill(effort_bands=summary.get("effort_bands", {}), outpath=out_dir)
-
-for plot in vel_plots:
-    plots.append(plot)
-
-if eff_plots:
-    for plot in eff_plots:
+    for plot in vel_plots:
         plots.append(plot)
 
-report_json = write_report_json_extended(
-    name="RelAIBotiX - Diffusion",
-    system_failure_prob=system_reliability,
-    task_success_rate_percent=task_success,
-    base_probs=base_p_per_min,
-    skill_pf=skill_pf,
-    summary=summary,
-    outpath=out_dir / "report_diffusion.json",
-)
+    if eff_plots:
+        for plot in eff_plots:
+            plots.append(plot)
 
-create_pdf_extended(str(report_json), [str(p) for p in plots], filename=str(out_dir / "report_diffusion.pdf"))
+    report_json = write_report_json_extended(
+        name="RelAIBotiX - Reliability Report",
+        system_failure_prob=system_reliability,
+        task_success_rate_percent=task_success,
+        base_probs=base_p_per_min,
+        skill_pf=skill_pf,
+        summary=summary,
+        outpath=out_dir / "reliability_report.json",
+    )
+
+    create_pdf_extended(str(report_json), [str(p) for p in plots], filename=str(out_dir / "reliability_report.pdf"))
+
+
+def run_skill_detector(h5_path: str, checkpoint_path: str,
+                       out_dir: str = "artifacts/skill_detector",
+                       ):
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    run_inference(h5_path=h5_path,
+                  checkpoint_path=checkpoint_path,
+                  model_type="cnn_transformer",
+                  window_size=500,
+                  feature_columns=[0, 1, 2, 3, 4, 5, 6, 17],
+                  num_classes=5,
+                  batch_size=64,
+                  device="mps",
+                  out_labels_name="labels_pred",
+                  stride=1,
+                  )
+    with h5py.File(h5_path, "r") as f:
+        labels_pred = f["labels_pred"][()]  # (N,)
+
+    labels_pred_filter = filter_short_segments(labels_pred)
+    labels_df = pd.DataFrame(labels_pred_filter)
+    labels_df.to_csv(out_dir / "labels_pred.csv", index=False)
+
+
+def _cli_relaibotix():
+    parser = argparse.ArgumentParser(description="Run RelAIBotiX pipeline")
+    parser.add_argument("--h5", required=True, help="Path to H5 dataset")
+    parser.add_argument("--ckpt", help="Path to checkpoint file",
+                        default="artifacts/checkpoints/skill_detector.ckpt")
+    parser.add_argument("--config", help="Path to robot config JSON",
+                        default="config_files/robots/so_arm_config.json")
+    parser.add_argument("--output", default="artifacts/reports", help="Report output directory")
+    parser.add_argument("--prism", default="artifacts/prism", help="PRISM output directory")
+    args = parser.parse_args()
+
+    run_relaibotix(
+        h5_path=args.h5,
+        checkpoint_path=args.ckpt,
+        config_path=args.config,
+        out_dir=args.output,
+        out_dir_prism=args.prism
+    )
+
+
+def _cli_faulty_evaluation_relaibotix():
+    parser = argparse.ArgumentParser(description="Evaluate faulty vs normal runs")
+    parser.add_argument("--h5", required=True, help="Path to H5 dataset")
+    parser.add_argument("--output", default="artifacts/reports/faulty", help="Output directory")
+    parser.add_argument("--tol", type=float, default=0.02, help="XY tolerance for success [m]")
+    parser.add_argument("--target-x", type=float, default=0.20, help="Target X [m]")
+    parser.add_argument("--target-y", type=float, default=-0.15, help="Target Y [m]")
+    args = parser.parse_args()
+
+    run_evaluation_faulty(
+        h5_path=args.h5,
+        out_dir=args.output,
+        tol=args.tol,
+        target_xy=(args.target_x, args.target_y)
+    )
+
+
+def _cli_skill_detector():
+    parser = argparse.ArgumentParser(description="Run skill detector only")
+    parser.add_argument("--h5", required=True, help="Path to H5 dataset")
+    parser.add_argument("--ckpt", help="Path to checkpoint file",
+                        default="artifacts/checkpoints/skill_detector.ckpt")
+    parser.add_argument("--output", default="artifacts/skill_detector", help="Output directory")
+    args = parser.parse_args()
+
+    run_skill_detector(
+        h5_path=args.h5,
+        checkpoint_path=args.ckpt,
+        out_dir=args.output,
+    )
