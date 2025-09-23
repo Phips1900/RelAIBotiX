@@ -73,6 +73,10 @@ This will produce:
 - A reliability report (PDF + JSON) in `results/reports/`
 - A PRISM model in `results/prism/`
 
+**Note:** Training data demonstrations for imitation learning are provided in  
+`datasets/LeRobot_Demonstrations/`.
+This folder contains **100 demonstrations** collected for policy training.
+
 ---
 
 ### Available Commands
