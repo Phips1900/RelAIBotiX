@@ -67,6 +67,13 @@ lightning_logs/
 *.tfevents.*
 
 # -------------------------
+# Local research datasets
+# -------------------------
+# Full case-study datasets are kept locally or hosted externally. Small,
+# versioned test fixtures belong under tests/data instead.
+datasets/
+
+# -------------------------
 # Configs
 # -------------------------
 # keep all configs tracked
