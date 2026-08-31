@@ -107,8 +107,14 @@ def _validate_flat(h5_file: h5py.File, issues: list[ValidationIssue]) -> None:
     _validate_feature_dataset(features, issues, "/features")
     sample_count = int(features.shape[0]) if features.ndim else 0
 
-    for name in ("timestamps", "labels"):
-        dataset = h5_file.get(name)
+    required_datasets = {
+        "timestamps": h5_file.get("timestamps"),
+        "episode_ids": h5_file.get(
+            "episode_ids",
+            h5_file.get("episodes", h5_file.get("labels")),
+        ),
+    }
+    for name, dataset in required_datasets.items():
         if not isinstance(dataset, h5py.Dataset):
             _issue(issues, "error", f"{name}.missing", f"Missing root '{name}' dataset.")
         elif dataset.ndim != 1 or dataset.shape[0] != sample_count:
@@ -117,7 +123,7 @@ def _validate_flat(h5_file: h5py.File, issues: list[ValidationIssue]) -> None:
                 "error",
                 f"{name}.shape",
                 f"'{name}' must have shape ({sample_count},).",
-                f"/{name}",
+                f"/{dataset.name.lstrip('/')}",
             )
 
     for name in ("predicted_labels", "labels_pred", "skills/predicted"):

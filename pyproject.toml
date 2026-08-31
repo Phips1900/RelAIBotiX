@@ -38,6 +38,4 @@ dev = [
 where = ["src"]
 
 [project.scripts]
-relaibotix = "relaibotix.handler:_cli_relaibotix"
-relaibotix_faulty = "relaibotix.handler:_cli_faulty_evaluation_relaibotix"
-relaibotix_skill_detector = "relaibotix.handler:_cli_skill_detector"
+relaibotix = "relaibotix.cli:main"
