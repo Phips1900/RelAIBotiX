@@ -176,16 +176,16 @@ class BehavioralAnalyzer:
         """
         comp: Dict[str, Dict[str, int]] = {}
 
-        pat_primary = re.compile(r"^joint_(pos|vel|eff)_(\d+)$")
-        pat_eff_aliases = re.compile(r"^joint_(torque|effort|tau)_(\d+)$")
-
         for idx, n in enumerate(names):
             s = n.lower()
             # joints
-            m = re.match(r"joint_(pos|vel|eff)_(\d+)$", s)
+            m = re.match(r"^joint_(pos|vel|eff|torque|effort|tau)_(.+)$", s)
             if m:
-                prop = m.group(1)  # 'pos' or 'vel'
-                jid = f"j{int(m.group(2))}"
+                prop = m.group(1)
+                if prop in ("torque", "effort", "tau"):
+                    prop = "eff"
+                joint_name = m.group(2)
+                jid = f"j{int(joint_name)}" if joint_name.isdigit() else joint_name
                 comp.setdefault(jid, {})[prop] = idx
                 continue
             # gripper
@@ -598,6 +598,7 @@ class BehavioralAnalyzer:
                     eps_vel = getattr(self, "eps_vel", 1e-3)
                     rms_vel_thr = getattr(self, "rms_vel_thr", 1e-2)
                     dc_thr = getattr(self, "dc_thr", 0.2)
+                    m[f"{comp}.{prop}_absmax"] = float(np.max(np.abs(arr_finite)))
 
                     # per-interval mask on base timeline
                     vel_mask = self._active_mask_from_series(arr, tseg, eps_vel)
@@ -631,6 +632,9 @@ class BehavioralAnalyzer:
                     step_thr = getattr(self, "eps_step_pos", 0.001)  # rad / sample
 
                     steps = np.r_[0.0, np.abs(np.diff(arr))]  # per-sample
+                    finite_steps = np.isfinite(arr[:-1]) & np.isfinite(arr[1:])
+                    travel_distance = float(np.sum(np.abs(np.diff(arr))[finite_steps]))
+                    m[f"{comp}.{prop}_travel_distance"] = travel_distance
                     # convert to per-interval by looking at left endpoint step
                     pos_mask = steps[:-1] > step_thr
                     comp_mask |= pos_mask
@@ -799,6 +803,7 @@ class BehavioralAnalyzer:
                     row["vel_absmax"] = cm.metrics.get(f"{comp}.vel_absmax", None)
                     row["vel_max"] = cm.metrics.get(f"{comp}.vel_max", None)
                     row["vel_rms"] = cm.metrics.get(f"{comp}.vel_rms", None)
+                    row["travel_distance"] = cm.metrics.get(f"{comp}.pos_travel_distance", None)
                     # keep the rest of the metrics (wide) if you like:
                     wide = {k: v for k, v in cm.metrics.items() if
                             not k.endswith(".active_time_sec") and not k.endswith(".active_fraction")}
@@ -934,6 +939,7 @@ class BehavioralAnalyzer:
           - skill_time:       per-skill total/avg time
           - comp_usage:       per-skill × component usage/time
           - joint_velocity:   per-skill × joint velocity peaks (absmax totals, avg max)
+          - joint_distance:   per-skill × joint position path length
         """
         runs_df, segments_df, components_df = self.to_frames(traces)
 
@@ -1006,6 +1012,24 @@ class BehavioralAnalyzer:
                 max_abs_vel=("vel_absmax", "max"),
             )
         )
+
+        # --- 6) Per-skill × joint traveled distance ---
+        distance_rows = joints_only.dropna(subset=["travel_distance"]).copy()
+        if distance_rows.empty:
+            joint_distance = pd.DataFrame(columns=[
+                "skill", "component", "total_distance", "avg_distance_per_episode",
+                "max_distance_per_episode", "n_episodes",
+            ])
+        else:
+            joint_distance = (
+                distance_rows.groupby(["skill", "component"], as_index=False)
+                .agg(
+                    total_distance=("travel_distance", "sum"),
+                    avg_distance_per_episode=("travel_distance", "mean"),
+                    max_distance_per_episode=("travel_distance", "max"),
+                    n_episodes=("travel_distance", "count"),
+                )
+            )
 
         # --- Velocity bands (per skill × joint) ---
         joints_only = components_df[components_df["component"].str.startswith("j")].copy()
@@ -1101,6 +1125,7 @@ class BehavioralAnalyzer:
             "skill_time": skill_time,
             "comp_usage": comp_usage,
             "joint_velocity": joint_velocity,
+            "joint_distance": joint_distance,
             "velocity_bands": band_aggs,
             "effort_bands": effort_bands
         }
@@ -1619,4 +1644,3 @@ class BehavioralAnalyzer:
 # num_cols = ft.select_dtypes(include="number").columns
 # ft[num_cols] = ft[num_cols].round(10)   # or fewer decimals
 # ft.to_csv("failure_table.csv", index=False)
-
