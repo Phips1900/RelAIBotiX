@@ -10,7 +10,7 @@ import json
 @dataclass
 class ComponentMetrics:
     active: bool
-    metrics: Dict[str, float]  # e.g. {"j3.tau_p95": 9.1, "gripper.pos_duty": 0.66}
+    metrics: Dict[str, float]
 
 
 @dataclass
@@ -41,9 +41,10 @@ class RunTrace:
     segments: List[SkillSegment]
 
 
-# SKILL_ID_TO_NAME = {0: "Init", 1: "Move", 2: "Pick", 3: "Carry", 4: "Place"}
-SKILL_ID_TO_NAME = {0: "Move", 1: "Pick", 2: "Carry", 3: "Place", 4: "Init"}
-
+#SKILL_ID_TO_NAME = {0: "Init", 1: "Move", 2: "Pick", 3: "Carry", 4: "Place"}
+# SKILL_ID_TO_NAME = {0: "Move", 1: "Pick", 2: "Carry", 3: "Place", 4: "Init"}
+#SKILL_ID_TO_NAME = {0: "Move", 1: "Pick", 2: "Carry", 3: "Place", 4: "Open", 5: "Drag", 6: "Use_Switch"}
+SKILL_ID_TO_NAME = {0: "Move", 1: "Pick", 2: "Carry", 3: "Place", 4: "Stack"}
 
 class BehavioralAnalyzer:
     def __init__(

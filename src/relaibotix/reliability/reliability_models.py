@@ -5,6 +5,7 @@ from relaibotix.reliability.solver import *
 import numpy as np
 import pandas as pd
 import copy
+from collections import defaultdict
 
 
 class HybridReliabilityModel:
@@ -435,9 +436,11 @@ class MarkovChain:
     def _build_symbolic_transitions_with_weights(
             self,
             *,
+            summary: Dict[str, pd.DataFrame],
             place_done_alpha: float,
             survival_weights: Dict[str, Dict[str, float]],
             start_mix: Dict[str, float],
+            place_weights: Dict[str, float],
     ) -> None:
         """
         Build self.transitions with strings, using empirical survival weights (loops included)
@@ -447,10 +450,22 @@ class MarkovChain:
         self.transitions.clear()
         last = self.states[-1] if self.states else None
 
+        # counts-based evidence (NOT normalized) + terminal frequencies
+        out_counts, terminal_counts = self._empirical_counts_and_terminals(
+            summary, self.states  # or canonical_order / self.states, whichever are your modeled ops
+        )
+
         # smoothing for 'done' + restarts after the last op
-        Z = float(sum(start_mix.values()) + place_done_alpha)
-        done_w = float(place_done_alpha) / Z
-        restart_w = {s: float(p) / Z for s, p in start_mix.items()}
+        # Z = float(sum(start_mix.values()) + place_done_alpha)
+        # done_w = float(place_done_alpha) / Z
+        # restart_w = {s: float(p) / Z for s, p in start_mix.items()}
+
+        # place_weights already sums to 1 and implements 1/(R+1) smoothing
+        done_w = float(place_weights.get("Done", 0.0))
+
+        # restart weights over operational start skills
+        restart_w = {s: float(w) for s, w in place_weights.items()
+                     if s != "Done" and s in self.states}
 
         for i, s in enumerate(self.states):
             self.transitions[s] = {}
@@ -459,35 +474,96 @@ class MarkovChain:
 
             # failure arc
             self.transitions[s][fail_tok] = fail_tok
+            # --- NEW: counts + terminal-driven exits (fixes Place->Move and Carry->Move) ---
 
-            if s in survival_weights:
-                # use observed outgoing edges (loops allowed)
-                for d, w in survival_weights[s].items():
-                    self.transitions[s][d] = f"{w}*{surv_tok}"
+            term = int(terminal_counts.get(s, 0))  # how often episodes ended at s
+            base = dict(out_counts.get(s, {}))  # empirical successor COUNTS (not normalized)
+
+            done_mass = 0.0
+            if term > 0:
+                # add restart mass proportional to how often episodes ended here
+                for d0, p in start_mix.items():
+                    if d0 in self.states:
+                        base[d0] = base.get(d0, 0.0) + term * float(p)
+
+                # add smoothed done option (alpha)
+                done_mass = float(place_done_alpha)
+
+            total = float(sum(base.values()) + done_mass)
+
+            if total > 0.0:
+                # normalize survival distribution
+                for d, cnt in base.items():
+                    self.transitions[s][d] = f"{(float(cnt) / total)}*{surv_tok}"
+
+                if done_mass > 0.0 and "done" in self.absorbing_states:
+                    self.transitions[s]["done"] = f"{(done_mass / total)}*{surv_tok}"
+
             else:
-                # fallback: linear forward
+                # fallback if we have zero evidence for this state
                 if s != last:
                     nxt = self.states[i + 1]
                     self.transitions[s][nxt] = surv_tok
                 else:
-                    # last without empirical weights → Done + restarts
+                    # last fallback: restart + done using start_mix only
+                    Z = float(sum(start_mix.values()) + place_done_alpha)
                     if "done" in self.absorbing_states:
-                        self.transitions[s]["done"] = f"{done_w}*{surv_tok}"
-                    for d, w in restart_w.items():
-                        if d in self.states:
-                            self.transitions[s][d] = f"{w}*{surv_tok}"
+                        self.transitions[s]["done"] = f"{(place_done_alpha / Z)}*{surv_tok}"
+                    for d0, p in start_mix.items():
+                        if d0 in self.states:
+                            self.transitions[s][d0] = f"{(p / Z)}*{surv_tok}"
+
+            # if s in survival_weights:
+            #     # use observed outgoing edges (loops allowed)
+            #     for d, w in survival_weights[s].items():
+            #         self.transitions[s][d] = f"{w}*{surv_tok}"
+            # else:
+            #     # fallback: linear forward
+            #     if s != last:
+            #         nxt = self.states[i + 1]
+            #         self.transitions[s][nxt] = surv_tok
+            #     else:
+            #         # last without empirical weights → Done + restarts
+            #         if "done" in self.absorbing_states:
+            #             self.transitions[s]["done"] = f"{done_w}*{surv_tok}"
+            #         for d, w in restart_w.items():
+            #             if d in self.states:
+            #                 self.transitions[s][d] = f"{w}*{surv_tok}"
+
+            # # special handling for last state if we DO have empirical weights:
+            # if s == last and s in survival_weights:
+            #     base = dict(survival_weights[s])  # observed successors among states
+            #     total = sum(base.values())
+            #     if total > 0.0:
+            #         # scale to leave room for 'done'
+            #         scale = (1.0 - done_w) / total
+            #         if "done" in self.absorbing_states:
+            #             self.transitions[s]["done"] = f"{done_w}*{surv_tok}"
+            #         for d, w in base.items():
+            #             self.transitions[s][d] = f"{w * scale}*{surv_tok}"
 
             # special handling for last state if we DO have empirical weights:
-            if s == last and s in survival_weights:
-                base = dict(survival_weights[s])  # observed successors among states
-                total = sum(base.values())
-                if total > 0.0:
-                    # scale to leave room for 'done'
-                    scale = (1.0 - done_w) / total
-                    if "done" in self.absorbing_states:
-                        self.transitions[s]["done"] = f"{done_w}*{surv_tok}"
-                    for d, w in base.items():
-                        self.transitions[s][d] = f"{w * scale}*{surv_tok}"
+            # if s == last and s in survival_weights:
+            #     base = dict(survival_weights[s])  # observed successors among states
+            #
+            #     # MERGE in restart edges (e.g., Place -> Move) even if not observed in-sequence
+            #     merged = {}
+            #     for d, w in base.items():
+            #         merged[d] = merged.get(d, 0.0) + float(w)
+            #     for d, w in restart_w.items():
+            #         if d in self.states:
+            #             merged[d] = merged.get(d, 0.0) + float(w)
+            #
+            #     total = sum(merged.values())
+            #     if total > 0.0:
+            #         # Allocate (1 - done_w) across {empirical successors + restart mix}
+            #         scale = (1.0 - done_w) / total
+            #
+            #         if "done" in self.absorbing_states:
+            #             self.transitions[s]["done"] = f"{done_w}*{surv_tok}"
+            #
+            #         for d, w in merged.items():
+            #             self.transitions[s][d] = f"{w * scale}*{surv_tok}"
 
         # absorbing self-loops
         for a in self.absorbing_states:
@@ -523,7 +599,8 @@ class MarkovChain:
 
         # 1) States & absorbing
         if canonical_order is None:
-            canonical_order = self._most_frequent_sequence(summary["sequences"])
+            # canonical_order = self._most_frequent_sequence(summary["sequences"])
+            canonical_order = self._canonical_order_union(summary["sequences"])
         self.add_states(canonical_order)
         self.add_absorbing_states(add_done=True)
 
@@ -550,14 +627,27 @@ class MarkovChain:
         #     self._validate_rows()
 
         if failure_per_skill is None:
+            # if allow_loops:
+            #     surv_w = self._empirical_survival_weights(
+            #         summary, canonical_order, min_count=min_count, min_frac=min_frac
+            #     )
+            #     self._build_symbolic_transitions_with_weights(
+            #         place_done_alpha=done_alpha,
+            #         survival_weights=surv_w,
+            #         start_mix=start_mix,
+            #     )
             if allow_loops:
                 surv_w = self._empirical_survival_weights(
                     summary, canonical_order, min_count=min_count, min_frac=min_frac
                 )
+                place_weights = self._place_exit_weights(summary, done_alpha=done_alpha)
+
                 self._build_symbolic_transitions_with_weights(
+                    summary=summary,
                     place_done_alpha=done_alpha,
                     survival_weights=surv_w,
                     start_mix=start_mix,
+                    place_weights=place_weights,  # <-- add
                 )
             else:
                 # original linear symbolic builder
@@ -586,6 +676,28 @@ class MarkovChain:
         if s > 0:
             pi /= s
         self.pi0 = pi
+
+    def _canonical_order_union(self, seq_df: pd.DataFrame) -> List[str]:
+        # 1) collect all states seen anywhere
+        seen = set()
+        for seq in seq_df["sequence"].astype(str):
+            toks = [t.strip() for t in seq.split(" > ") if t.strip()]
+            seen.update(toks)
+
+        # 2) build an order by scanning sequences from most frequent to least
+        order = []
+        for seq in seq_df.sort_values("count", ascending=False)["sequence"].astype(str):
+            toks = [t.strip() for t in seq.split(" > ") if t.strip()]
+            for t in toks:
+                if t in seen and t not in order:
+                    order.append(t)
+
+        # 3) append anything missed (rare corner cases) deterministically
+        for t in sorted(seen):
+            if t not in order:
+                order.append(t)
+
+        return order
 
     def _build_edges_for_linear_flow(self, start_mix_keys: List[str]) -> None:
         """Adjacency lists (lists only)."""
@@ -724,6 +836,32 @@ class MarkovChain:
         if self.pi0 is None:
             raise RuntimeError("Call build_from_analyzer(...) first.")
         return self.pi0
+
+    def _empirical_counts_and_terminals(self, summary, canonical_order):
+        seq_df = summary["sequences"]
+        states = set(canonical_order)
+
+        out_counts = defaultdict(lambda: defaultdict(int))
+        terminal_counts = defaultdict(int)
+
+        for _, row in seq_df.iterrows():
+            seq = str(row["sequence"])
+            c = int(row["count"])
+            toks = [t.strip() for t in seq.split(" > ") if t.strip()]
+
+            # bigrams
+            for i in range(len(toks) - 1):
+                s, t = toks[i], toks[i + 1]
+                if s in states and t in states:
+                    out_counts[s][t] += c
+
+            # terminal
+            if toks:
+                last = toks[-1]
+                if last in states:
+                    terminal_counts[last] += c
+
+        return out_counts, terminal_counts
 
 
 class FaultTree:
