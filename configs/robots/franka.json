@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0",
+  "robot": {
+    "id": "franka_emika_panda",
+    "name": "Franka Emika Panda",
+    "type": "fixed_manipulator"
+  },
+  "failure_probability_basis": "per_minute",
+  "joints": [
+    {
+      "id": "joint_1",
+      "features": {"position": "joint_pos_1", "velocity": "joint_vel_1", "effort": "joint_effort_1"},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1}
+    },
+    {
+      "id": "joint_2",
+      "features": {"position": "joint_pos_2", "velocity": "joint_vel_2", "effort": "joint_effort_2"},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1}
+    },
+    {
+      "id": "joint_3",
+      "features": {"position": "joint_pos_3", "velocity": "joint_vel_3", "effort": "joint_effort_3"},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1}
+    },
+    {
+      "id": "joint_4",
+      "features": {"position": "joint_pos_4", "velocity": "joint_vel_4", "effort": "joint_effort_4"},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1}
+    },
+    {
+      "id": "joint_5",
+      "features": {"position": "joint_pos_5", "velocity": "joint_vel_5", "effort": "joint_effort_5"},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1}
+    },
+    {
+      "id": "joint_6",
+      "features": {"position": "joint_pos_6", "velocity": "joint_vel_6", "effort": "joint_effort_6"},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1}
+    },
+    {
+      "id": "joint_7",
+      "features": {"position": "joint_pos_7", "velocity": "joint_vel_7", "effort": "joint_effort_7"},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1}
+    }
+  ],
+  "components": [
+    {
+      "id": "gripper",
+      "type": "gripper",
+      "features": {"position": "gripper_state"},
+      "failure_probability": 7.344e-8,
+      "redundancy": {"copies": 1}
+    },
+    {
+      "id": "controller",
+      "type": "controller",
+      "always_active": true,
+      "failure_probability": 2.167e-10,
+      "redundancy": {"copies": 2, "mode": "parallel"}
+    },
+    {
+      "id": "power_supply",
+      "type": "power_supply",
+      "always_active": true,
+      "failure_probability": 6.674e-8,
+      "redundancy": {"copies": 2, "mode": "parallel"}
+    },
+    {
+      "id": "camera",
+      "type": "camera",
+      "always_active": true,
+      "failure_probability": 1.029e-9,
+      "redundancy": {"copies": 1}
+    },
+    {
+      "id": "sensors",
+      "type": "sensors",
+      "always_active": true,
+      "failure_probability": 5.917e-8,
+      "redundancy": {"copies": 2, "mode": "parallel"}
+    }
+  ]
+}

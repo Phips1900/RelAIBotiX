@@ -7,16 +7,31 @@ name = "relaibotix"
 version = "0.1.0"
 description = "RelAIBotiX"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [{name = "Philipp"}]
 
-dependencies = []
+dependencies = [
+  "h5py>=3.10",
+  "jsonpickle>=3.0",
+  "networkx>=3.0",
+  "numpy>=1.26",
+  "pandas>=2.0",
+  "PyYAML>=6.0",
+  "scipy>=1.10",
+]
 
 [project.optional-dependencies]
-full = [
-  "numpy","pandas","matplotlib","scipy","h5py","networkx","torch",
-  "torchmetrics","pytorch-lightning","tensorboard","tensorboardx",
-  "scikit-learn","seaborn","tqdm","omegaconf","hydra-core","pyyaml","fpdf",
+skill-detection = [
+  "pytorch-lightning>=2.0",
+  "torch>=2.3",
+]
+reporting = [
+  "fpdf2>=2.7",
+  "matplotlib>=3.8",
+  "seaborn>=0.13",
+]
+dev = [
+  "pytest>=8.0",
 ]
 
 [tool.setuptools.packages.find]
