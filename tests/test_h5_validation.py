@@ -115,3 +115,19 @@ def test_convert_multi_episode_flattens_episodes(tmp_path):
     with h5py.File(output, "r") as h5_file:
         np.testing.assert_array_equal(h5_file["episode_ids"][:], [0, 0, 0, 1, 1])
         np.testing.assert_array_equal(h5_file["source/skill_ids"][:], [-1, -1, -1, -1, -1])
+
+
+def test_convert_renumbers_repeated_flat_episode_ids(tmp_path):
+    source = tmp_path / "repeated.h5"
+    output = tmp_path / "canonical.h5"
+    with h5py.File(source, "w") as h5_file:
+        features = h5_file.create_dataset("features", data=np.ones((6, 1)))
+        _feature_names(features, ["joint_pos_1"])
+        h5_file.create_dataset("timestamps", data=np.arange(6, dtype=float))
+        h5_file.create_dataset("labels", data=[0, 0, 1, 1, 0, 0])
+
+    convert_h5(source, output)
+
+    with h5py.File(output, "r") as converted:
+        assert converted["episode_ids"][:].tolist() == [0, 0, 1, 1, 2, 2]
+    assert inspect_h5(output).episodes == 3

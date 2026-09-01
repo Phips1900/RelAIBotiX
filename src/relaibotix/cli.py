@@ -97,6 +97,56 @@ def _run_behavior(arguments: Sequence[str]) -> int:
     return 0
 
 
+def _skills_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="relaibotix skills infer",
+        description="Run a pretrained skill detector on a canonical HDF5 file.",
+    )
+    parser.add_argument("input", type=Path)
+    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument(
+        "--features",
+        nargs="+",
+        required=True,
+        help="Ordered HDF5 feature names expected by the checkpoint.",
+    )
+    parser.add_argument("--model", default="cnn_transformer")
+    parser.add_argument("--window-size", type=int)
+    parser.add_argument("--num-classes", type=int)
+    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
+    parser.add_argument("--min-segment-length", type=int, default=10)
+    parser.add_argument("--short-episodes", choices=("pad", "error"), default="pad")
+    parser.add_argument("--overwrite", action="store_true")
+    return parser
+
+
+def _run_skills(arguments: Sequence[str]) -> int:
+    if not arguments or arguments[0] != "infer":
+        raise SystemExit("Usage: relaibotix skills infer ...")
+    args = _skills_parser().parse_args(arguments[1:])
+    from .skilldetector import run_inference
+
+    result = run_inference(
+        h5_path=args.input,
+        checkpoint_path=args.checkpoint,
+        model_type=args.model,
+        feature_names=args.features,
+        window_size=args.window_size,
+        num_classes=args.num_classes,
+        batch_size=args.batch_size,
+        device=args.device,
+        min_segment_length=args.min_segment_length,
+        short_episode_policy=args.short_episodes,
+        overwrite=args.overwrite,
+    )
+    print(
+        f"Skill inference: {result.samples} samples across {result.episodes} episodes "
+        f"-> /{result.dataset}"
+    )
+    return 0
+
+
 def _run_legacy_analysis(arguments: Sequence[str]) -> int:
     """Keep the existing pipeline callable until the new pipeline replaces it."""
 
@@ -117,6 +167,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_h5(arguments[1:])
     if arguments and arguments[0] == "behavior":
         return _run_behavior(arguments[1:])
+    if arguments and arguments[0] == "skills":
+        return _run_skills(arguments[1:])
     if arguments and arguments[0] == "analyze":
         return _run_legacy_analysis(arguments[1:])
     return _run_legacy_analysis(arguments)

@@ -88,6 +88,17 @@ relaibotix h5 validate <dataset.h5>
 relaibotix behavior <labeled_dataset.h5> --output artifacts/behavior
 ```
 
+- **Skill inference**
+
+```bash
+relaibotix skills infer <canonical_dataset.h5> \
+  --checkpoint artifacts/checkpoints/skill_detector.ckpt \
+  --features x y z ox oy oz ow gripper_state
+```
+
+Skill predictions are written to `/skills/predicted` in the HDF5 file. Behavioral
+analysis reads that dataset directly.
+
 - **Full pipeline**
 
 ```bash

@@ -1,5 +1,6 @@
 import h5py
 import numpy as np
+from types import SimpleNamespace
 
 from relaibotix.cli import main
 
@@ -61,3 +62,30 @@ def test_behavior_command(tmp_path):
     assert (output_path / "segments.csv").is_file()
     assert (output_path / "joint_metrics.csv").is_file()
     assert (output_path / "behavior.json").is_file()
+
+
+def test_skills_infer_command(tmp_path, monkeypatch):
+    import relaibotix.skilldetector
+
+    captured = {}
+
+    def fake_inference(**arguments):
+        captured.update(arguments)
+        return SimpleNamespace(samples=12, episodes=2, dataset="skills/predicted")
+
+    monkeypatch.setattr(relaibotix.skilldetector, "run_inference", fake_inference)
+    input_path = tmp_path / "input.h5"
+    checkpoint = tmp_path / "model.ckpt"
+
+    assert main([
+        "skills",
+        "infer",
+        str(input_path),
+        "--checkpoint",
+        str(checkpoint),
+        "--features",
+        "x",
+        "gripper_state",
+    ]) == 0
+    assert captured["feature_names"] == ["x", "gripper_state"]
+    assert captured["h5_path"] == input_path

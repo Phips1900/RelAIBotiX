@@ -25,6 +25,8 @@ def run_relaibotix(h5_path: str,
                   batch_size=64,
                   device="mps",
                   out_labels_name="labels_pred",
+                  episode_ids_ds="labels",
+                  overwrite=True,
                   stride=1,
                   )
 
@@ -168,6 +170,8 @@ def run_skill_detector(h5_path: str, checkpoint_path: str,
                   batch_size=64,
                   device="mps",
                   out_labels_name="labels_pred",
+                  episode_ids_ds="labels",
+                  overwrite=True,
                   stride=1,
                   )
     with h5py.File(h5_path, "r") as f:

@@ -81,7 +81,11 @@ def inspect_h5(path: str | Path) -> H5Summary:
             episode_count = 0
             if isinstance(episode_dataset, h5py.Dataset) and episode_dataset.size:
                 episode_ids = episode_dataset[:]
-                episode_count = len({int(value) for value in episode_ids if value >= 0})
+                valid = np.isfinite(episode_ids) & (episode_ids >= 0)
+                episode_count = int(
+                    valid[0]
+                    + np.sum(valid[1:] & ((episode_ids[1:] != episode_ids[:-1]) | ~valid[:-1]))
+                )
 
             skill_labels = next(
                 (
@@ -184,7 +188,11 @@ def _convert_flat(source: h5py.File, output: h5py.File) -> None:
     source_episodes = source.get("episode_ids", source.get("episodes", source.get("labels")))
     if not isinstance(source_episodes, h5py.Dataset):
         raise ValueError("Flat input is missing episode IDs.")
-    _copy_rows(source_episodes, episode_ids, int(sample_count))
+    original_episode_ids = source_episodes[:]
+    if not np.isfinite(original_episode_ids).all() or np.any(original_episode_ids < 0):
+        raise ValueError("Flat input episode IDs must be finite and non-negative.")
+    boundaries = np.r_[True, original_episode_ids[1:] != original_episode_ids[:-1]]
+    episode_ids[:] = np.cumsum(boundaries, dtype=np.int64) - 1
     _copy_attributes(source_features.attrs, features.attrs)
 
     source_group = output.create_group("source")

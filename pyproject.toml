@@ -22,7 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 skill-detection = [
-  "pytorch-lightning>=2.0",
+  "omegaconf>=2.3",
   "torch>=2.3",
 ]
 reporting = [

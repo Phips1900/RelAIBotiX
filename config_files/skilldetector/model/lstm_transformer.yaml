@@ -1,6 +1,0 @@
-# LSTM model with Positional Encoding
-_target_: models.lstm_transformer.LSTMTransformer
-window_size: 100
-num_features: 8      # data features length
-num_classes: 4      # classes
-learning_rate: 0.001

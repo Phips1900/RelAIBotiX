@@ -109,7 +109,7 @@ class BiLSTM(pl.LightningModule):
                 """
                 This piece of code throws error sometimes randomly. I could not find a resolution yet. 
                 See: https://stackoverflow.com/questions/62953704/valueerror-the-number-of-fixedlocator-locations-5-usually-from-a-call-to-set
-                Workaround is to simply launch again from debug mode, or run: HYDRA_FULL_ERROR=1 python training_pipeline.py
+                Recreate the model after changing its input dimensions.
                 """
                 ax_raw.set_xticks(range(len(class_names)))
                 ax_raw.set_yticks(range(len(class_names)))
