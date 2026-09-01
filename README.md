@@ -1,121 +1,116 @@
-# RelAIBotiX <!-- omit from toc -->
+# RelAIBotiX
 
-Dynamic Reliability Assessment Framework for AI-Controlled Robotic Systems
+Dynamic reliability assessment for AI-controlled robotic systems.
 
-## Table of Contents <!-- omit from toc -->
-- [Introduction](#introduction)
-- [Approach](#approach)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Minimal Example](#minimal-example)
-  - [Available Commands](#available-commands)
-  - [Arguments](#arguments)
-- [License](#license)
+This release branch is being reorganized around one portable workflow:
 
----
+1. validate or convert an HDF5 recording;
+2. run a pretrained skill detector;
+3. calculate behavioral metrics;
+4. build reliability models with the DTMC, fault-tree, PRISM, BDD, and STORM backends.
 
-## Introduction
-AI-controlled robotic systems can introduce significant risks to both humans and the environment.  
-Traditional reliability assessment methods fall short in addressing the complexities of these systems, particularly when dealing with black-box or dynamically changing control policies.  
-These traditional approaches are applied manually and do not consider frequent software updates. 
-
-**RelAIBotiX** presents a methodology that enables **dynamic and continuous reliability assessment**, specifically tailored for robotic systems controlled by AI algorithms.
-
----
-
-## Approach
-![RelAIBotiX Framework](artifacts/figures/RelAIBotiX.png)
-
-The framework provides:
-- Skill detection 
-- Behavioral analysis 
-- Automatic generation of hybrid reliability models (DTMC, Fault Trees, PRISM)
-- Structured reliability reports (CSV, PDF)
-
----
+The first three stages are available through the new command-line interface. The
+reliability backends are currently being migrated from the legacy research code.
 
 ## Installation
 
-We recommend using a **conda environment** to manage dependencies.
+Python 3.10 or newer is required.
 
 ```bash
-# Create and activate environment
-conda create -n relaibotix python=3.10 -y
-conda activate relaibotix
-
-# Clone the repository
-git clone https://github.com/your-username/RelAIBotiX.git
+git clone https://github.com/Phips1900/RelAIBotiX.git
 cd RelAIBotiX
-
-# Install requirements
-pip install -r requirements.txt
-
-# Install package in editable mode
-pip install -e .
+python -m pip install -e .
 ```
 
----
-
-## Usage
-
-After installation, RelAIBotiX is available as a CLI tool.
-
-### Minimal Example
-
-Run the full pipeline on a small dataset:
+Install the separately maintained pretrained-detector runtime when skill inference
+is needed:
 
 ```bash
-relaibotix --h5 datasets/IL/act/act_20.h5
+python -m pip install -e '.[skill-detection]'
 ```
 
-This will produce:
-- A reliability report (PDF + JSON) in `results/reports/`
-- A PRISM model in `results/prism/`
+## HDF5 input
 
-### Available Commands
+The canonical layout stores each episode independently:
 
-The CLI supports different modes:
+```text
+/data/demo_XXXXXX/
+├── features
+├── timestamps/sim
+├── episode/index
+└── labels/skill_id
+```
 
-- **Validate an HDF5 input**
+Feature names are stored on each `features` dataset. Inputs can be checked without
+modification:
 
 ```bash
-relaibotix h5 validate <dataset.h5>
+relaibotix h5 inspect recording.h5
+relaibotix h5 validate recording.h5
 ```
 
-- **Behavioral analysis**
+A supported flat legacy file can be converted to a separate canonical copy:
 
 ```bash
-relaibotix behavior <labeled_dataset.h5> --output artifacts/behavior
+relaibotix h5 convert legacy.h5 canonical.h5
 ```
 
-- **Skill inference**
+Neither validation nor conversion changes the source file.
+
+## Skill inference
+
+Training lives in the separate
+[relaibotix-skill-detector](https://github.com/Phips1900/relaibotix-skill-detector)
+repository. RelAIBotiX only provides the inference connection:
 
 ```bash
-relaibotix skills infer <canonical_dataset.h5> \
-  --checkpoint artifacts/checkpoints/skill_detector.ckpt \
-  --features x y z ox oy oz ow gripper_state
+relaibotix skills infer canonical.h5 \
+  --checkpoint /path/to/best.pt \
+  --output predicted.h5
 ```
 
-Skill predictions are written to `/skills/predicted` in the HDF5 file. Behavioral
-analysis reads that dataset directly.
+The checkpoint defines the architecture, ordered feature set, training
+normalization, window alignment, and label taxonomy. These are deliberately not
+duplicated as command-line arguments.
 
-- **Full pipeline**
+The detector copies the input and adds raw and filtered predictions below every
+episode's `labels` group. The source HDF5 is never overwritten. Camera and hybrid
+checkpoints can also be selected explicitly:
 
 ```bash
-relaibotix --h5 <dataset.h5>
+relaibotix skills infer canonical.h5 \
+  --checkpoint /path/to/camera-or-hybrid.pt \
+  --output predicted.h5 \
+  --modality camera \
+  --lerobot-root /path/to/aligned/videos
 ```
 
-### Arguments
+The video root is detector input for the camera and hybrid modalities; it is not a
+RelAIBotiX release dataset or conversion requirement.
 
-| Argument       | Description                                     | Default                                      |
-|----------------|-------------------------------------------------|----------------------------------------------|
-| `--h5`         | Path to the dataset in HDF5 format              | *(required)*                                 |
-| `--ckpt`       | Path to skill detector checkpoint               | `artifacts/checkpoints/skill_detector.ckpt`  |
-| `--config`     | Path to robot configuration JSON                | `config_files/robots/so_arm_config.json`     |
-| `--output`     | Output directory for reports                    | `results/reports`                            |
-| `--prism`      | Output directory for PRISM models               | `results/prism`                              |
+## Behavioral analysis
 
----
+```bash
+relaibotix behavior predicted.h5 --output artifacts/behavior
+```
+
+By default the analysis uses filtered predictions, then raw predictions, then
+ground-truth skill labels. It reports per-segment and aggregate duration, velocity,
+effort/torque, and joint traveled distance. Traveled distance is the sum of the
+absolute position changes within a skill segment, rather than only the difference
+between its first and last samples.
+
+Outputs are written as CSV files plus `behavior.json`. Success detection and fault
+injection are intentionally outside this release pipeline.
+
+## Current case-study scope
+
+The HDF5 and analysis interfaces are robot-independent. Existing pretrained
+detectors cover mobile manipulation and Franka simulation. SO-ARM, real Franka,
+LIBERO, and additional mobile checkpoints can be added without changing the
+RelAIBotiX interface, provided their checkpoints and canonical feature schemas are
+compatible with the detector package.
 
 ## License
-This project is licensed under the MIT License.
+
+MIT

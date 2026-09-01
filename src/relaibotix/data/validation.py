@@ -194,7 +194,18 @@ def _validate_multi_episode(h5_file: h5py.File, issues: list[ValidationIssue]) -
                     f"/data/{demo_name}/{relative_path}",
                 )
 
-        skill_ids = demo.get("labels/skill_id")
+        skill_ids = next(
+            (
+                demo.get(path)
+                for path in (
+                    "labels/filtered_skill_id",
+                    "labels/predicted_skill_id",
+                    "labels/skill_id",
+                )
+                if isinstance(demo.get(path), h5py.Dataset)
+            ),
+            None,
+        )
         if isinstance(skill_ids, h5py.Dataset):
             if skill_ids.ndim != 1 or skill_ids.shape[0] != sample_count:
                 _issue(

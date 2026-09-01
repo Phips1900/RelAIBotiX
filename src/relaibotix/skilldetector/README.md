@@ -1,18 +1,25 @@
-# Skill inference
+# Skill inference adapter
 
-RelAIBotiX contains inference support only. Model development and training are
-maintained in the separate skill-detector repository.
-
-Inference reads a canonical HDF5 file and writes one label per sample to
-`/skills/predicted`:
+Skill-detector training and model definitions are maintained in the separate
+`relaibotix-skill-detector` repository. This package is a thin inference adapter;
+it does not duplicate detector architectures or training code.
 
 ```bash
 relaibotix skills infer canonical.h5 \
-  --checkpoint artifacts/checkpoints/skill_detector.ckpt \
-  --features x y z ox oy oz ow gripper_state
+  --checkpoint /path/to/best.pt \
+  --output predicted.h5
 ```
 
-Feature names must be supplied in the exact order used during training. Window
-size and class count are read from the checkpoint when available. Inference is
-performed independently for every episode; short episodes are edge-padded by
-default and no window crosses an episode boundary.
+The detector reads feature order, normalization, architecture, window alignment,
+and label taxonomy from the checkpoint. It copies the source HDF5 and writes raw
+and minimum-duration-filtered predictions to each episode's `labels` group.
+
+Camera and hybrid models additionally require the aligned video dataset:
+
+```bash
+relaibotix skills infer canonical.h5 \
+  --checkpoint /path/to/best.pt \
+  --output predicted.h5 \
+  --modality hybrid \
+  --lerobot-root /path/to/aligned/videos
+```

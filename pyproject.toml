@@ -22,8 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 skill-detection = [
-  "omegaconf>=2.3",
-  "torch>=2.3",
+  "relaibotix-skill-detector @ git+https://github.com/Phips1900/relaibotix-skill-detector.git@4037d79",
 ]
 reporting = [
   "fpdf2>=2.7",

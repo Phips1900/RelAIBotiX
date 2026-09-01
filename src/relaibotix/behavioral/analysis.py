@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 from typing import Mapping, Sequence
@@ -38,6 +39,16 @@ def _joint_features(feature_names: Sequence[str]) -> dict[str, dict[str, int]]:
         signal = "effort" if signal.lower() in {"eff", "effort", "torque", "tau"} else signal.lower()
         joint = f"j{int(identifier)}" if identifier.isdigit() else identifier
         joints.setdefault(joint, {})[signal] = index
+
+    actuator_pattern = re.compile(r"^actuator_(?:force|effort|torque)_(.+)$", re.IGNORECASE)
+    for index, feature_name in enumerate(feature_names):
+        match = actuator_pattern.match(str(feature_name))
+        if match is None:
+            continue
+        identifier = match.group(1).lower()
+        candidate = f"joint_{identifier.removesuffix('_vel')}"
+        joint = candidate if candidate in joints else f"actuator_{identifier}"
+        joints.setdefault(joint, {})["effort"] = index
     return joints
 
 
@@ -83,12 +94,23 @@ class BehavioralAnalyzer:
         skill_labels: np.ndarray,
         timestamps: np.ndarray,
         episode_ids: np.ndarray,
+        episode_keys: np.ndarray | None = None,
+        skill_names: Mapping[int, str] | None = None,
     ) -> BehavioralResult:
         values = np.asarray(features, dtype=float)
         labels = np.asarray(skill_labels).reshape(-1)
         times = np.asarray(timestamps, dtype=float).reshape(-1)
         episodes = np.asarray(episode_ids).reshape(-1)
+        keys = (
+            np.asarray(episode_keys, dtype=object).reshape(-1)
+            if episode_keys is not None
+            else episodes.astype(str)
+        )
         self._validate(values, feature_names, labels, times, episodes)
+        if keys.size != len(values):
+            raise ValueError("Episode keys must have the same length as features.")
+        names = dict(skill_names or {})
+        names.update(self.skill_names)
 
         joints = _joint_features(feature_names)
         if not joints:
@@ -99,11 +121,12 @@ class BehavioralAnalyzer:
         for segment_index, (start, end) in enumerate(self._segments(labels, episodes)):
             episode_id = int(episodes[start])
             skill_id = int(labels[start])
-            skill = self.skill_names.get(skill_id, str(skill_id))
+            skill = names.get(skill_id, str(skill_id))
             segment_times = times[start : end + 1]
             duration = float(segment_times[-1] - segment_times[0]) if end > start else 0.0
             segment = {
                 "episode_id": episode_id,
+                "episode_key": str(keys[start]),
                 "segment_index": segment_index,
                 "skill_id": skill_id,
                 "skill": skill,
@@ -133,12 +156,23 @@ class BehavioralAnalyzer:
         self,
         input_path: str | Path,
         *,
-        skill_labels_dataset: str = "skills/predicted",
+        skill_labels_dataset: str | None = None,
     ) -> BehavioralResult:
-        """Analyze a canonical HDF5 file containing detector-produced skill labels."""
+        """Analyze flat legacy input or canonical grouped detector output."""
 
         with h5py.File(input_path, "r") as source:
-            required = ("features", "timestamps", "episode_ids", skill_labels_dataset)
+            if "data" in source:
+                return self._analyze_grouped_h5(source, skill_labels_dataset)
+
+            label_path = skill_labels_dataset or next(
+                (
+                    name
+                    for name in ("skills/predicted", "predicted_labels", "labels_pred")
+                    if name in source
+                ),
+                "skills/predicted",
+            )
+            required = ("features", "timestamps", "episode_ids", label_path)
             missing = [name for name in required if name not in source]
             if missing:
                 raise ValueError(f"HDF5 input is missing required datasets: {', '.join(missing)}")
@@ -146,10 +180,88 @@ class BehavioralAnalyzer:
             return self.analyze(
                 features=feature_dataset[:],
                 feature_names=decode_feature_names(feature_dataset),
-                skill_labels=source[skill_labels_dataset][:],
+                skill_labels=source[label_path][:],
                 timestamps=source["timestamps"][:],
                 episode_ids=source["episode_ids"][:],
             )
+
+    def _analyze_grouped_h5(
+        self,
+        source: h5py.File,
+        skill_labels_dataset: str | None,
+    ) -> BehavioralResult:
+        data = source["data"]
+        episode_names = [
+            name for name in sorted(data) if isinstance(data[name], h5py.Group) and "features" in data[name]
+        ]
+        if not episode_names:
+            raise ValueError("Canonical HDF5 input contains no '/data/demo_*' episodes.")
+
+        features: list[np.ndarray] = []
+        timestamps: list[np.ndarray] = []
+        labels: list[np.ndarray] = []
+        episode_ids: list[np.ndarray] = []
+        episode_keys: list[np.ndarray] = []
+        reference_names: tuple[str, ...] | None = None
+        detected_skill_names: dict[int, str] = {}
+        prediction_paths = (
+            (skill_labels_dataset.lstrip("/"),)
+            if skill_labels_dataset
+            else (
+                "labels/filtered_skill_id",
+                "labels/predicted_skill_id",
+                "labels/skill_id",
+            )
+        )
+
+        for episode_index, episode_name in enumerate(episode_names):
+            episode = data[episode_name]
+            feature_dataset = episode["features"]
+            names = decode_feature_names(feature_dataset)
+            if reference_names is None:
+                reference_names = names
+            elif names != reference_names:
+                raise ValueError(f"/data/{episode_name} uses a different feature schema.")
+            label_path = next((path for path in prediction_paths if path in episode), None)
+            if label_path is None:
+                raise ValueError(f"/data/{episode_name} has no usable skill-label dataset.")
+            if "timestamps/sim" not in episode:
+                raise ValueError(f"/data/{episode_name} is missing timestamps/sim.")
+
+            episode_features = np.asarray(feature_dataset, dtype=float)
+            episode_times = np.asarray(episode["timestamps/sim"], dtype=float).reshape(-1)
+            episode_labels = np.asarray(episode[label_path], dtype=np.int64).reshape(-1)
+            sample_count = len(episode_features)
+            if episode_times.size != sample_count or episode_labels.size != sample_count:
+                raise ValueError(f"/data/{episode_name} features, timestamps, and labels are not aligned.")
+
+            label_dataset = episode[label_path]
+            class_ids = label_dataset.attrs.get("class_skill_ids")
+            class_names_json = label_dataset.attrs.get("class_names_json")
+            if class_ids is not None and class_names_json is not None:
+                if isinstance(class_names_json, bytes):
+                    class_names_json = class_names_json.decode("utf-8")
+                class_names = json.loads(str(class_names_json))
+                detected_skill_names.update(
+                    {int(skill_id): str(name) for skill_id, name in zip(class_ids, class_names)}
+                )
+
+            features.append(episode_features)
+            timestamps.append(episode_times)
+            labels.append(episode_labels)
+            episode_ids.append(np.full(sample_count, episode_index, dtype=np.int64))
+            episode_keys.append(np.full(sample_count, episode_name, dtype=object))
+
+        assert reference_names is not None
+        return self.analyze(
+            features=np.concatenate(features),
+            feature_names=reference_names,
+            skill_labels=np.concatenate(labels),
+            timestamps=np.concatenate(timestamps),
+            episode_ids=np.concatenate(episode_ids),
+            episode_keys=np.concatenate(episode_keys),
+            skill_names=detected_skill_names,
+        )
 
     @staticmethod
     def _validate(
@@ -225,6 +337,7 @@ class BehavioralAnalyzer:
 
         return {
             "episode_id": segment["episode_id"],
+            "episode_key": segment["episode_key"],
             "segment_index": segment["segment_index"],
             "skill_id": segment["skill_id"],
             "skill": segment["skill"],
@@ -256,7 +369,7 @@ class BehavioralAnalyzer:
             segments.groupby(["skill_id", "skill"], as_index=False)
             .agg(
                 n_segments=("segment_index", "count"),
-                n_episodes=("episode_id", "nunique"),
+                n_episodes=("episode_key", "nunique"),
                 total_duration=("duration", "sum"),
                 mean_segment_duration=("duration", "mean"),
                 max_segment_duration=("duration", "max"),

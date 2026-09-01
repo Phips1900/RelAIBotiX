@@ -63,6 +63,22 @@ def test_analysis_reports_numbered_and_named_joint_distance():
     assert episode_one.loc["joint_left_wheel", "traveled_distance"] == pytest.approx(2.0)
 
 
+def test_analysis_recognizes_actuator_force_channels():
+    features = np.array([[0.0, 0.0], [1.0, 0.4], [2.0, -0.8]])
+    result = BehavioralAnalyzer().analyze(
+        features=features,
+        feature_names=["joint_pos_joint_lift", "actuator_force_lift"],
+        skill_labels=np.array([1, 1, 1]),
+        timestamps=np.array([0.0, 0.5, 1.0]),
+        episode_ids=np.array([0, 0, 0]),
+    )
+
+    lift = result.joint_metrics.iloc[0]
+    assert lift["joint"] == "joint_lift"
+    assert lift["traveled_distance"] == pytest.approx(2.0)
+    assert lift["max_abs_effort"] == pytest.approx(0.8)
+
+
 def test_analysis_requires_detector_labels():
     features, labels, timestamps, episodes = sample_data()
     labels[0] = -1
@@ -95,3 +111,34 @@ def test_analyze_h5_and_export(tmp_path):
     assert set(json.loads(json_path.read_text())) == {
         "segments", "joint_metrics", "skill_summary", "joint_summary"
     }
+
+
+def test_analyze_grouped_detector_output_uses_filtered_labels_and_taxonomy(tmp_path):
+    input_path = tmp_path / "predicted.h5"
+    with h5py.File(input_path, "w") as output:
+        data = output.create_group("data")
+        for episode_index in range(2):
+            episode = data.create_group(f"demo_{episode_index:06d}")
+            features = episode.create_dataset(
+                "features",
+                data=np.array([
+                    [0.0, 0.0],
+                    [0.5, 0.5],
+                    [1.0, 0.5],
+                ]),
+            )
+            features.attrs["feature_names"] = ["joint_pos_1", "joint_vel_1"]
+            episode.create_dataset("timestamps/sim", data=[0.0, 0.5, 1.0])
+            labels = episode.create_group("labels")
+            labels.create_dataset("predicted_skill_id", data=[1, 2, 1])
+            filtered = labels.create_dataset("filtered_skill_id", data=[1, 1, 1])
+            filtered.attrs["class_skill_ids"] = [1, 2]
+            filtered.attrs["class_names_json"] = '["move", "pick"]'
+
+    result = BehavioralAnalyzer().analyze_h5(input_path)
+
+    assert result.segments[["episode_key", "skill_id", "skill"]].to_dict(orient="records") == [
+        {"episode_key": "demo_000000", "skill_id": 1, "skill": "move"},
+        {"episode_key": "demo_000001", "skill_id": 1, "skill": "move"},
+    ]
+    assert result.skill_summary.iloc[0]["n_episodes"] == 2

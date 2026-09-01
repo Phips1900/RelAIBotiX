@@ -26,6 +26,13 @@ def test_h5_validate_command(tmp_path, capsys):
     assert "VALID:" in capsys.readouterr().out
 
 
+def test_no_arguments_shows_new_cli_help(capsys):
+    assert main([]) == 0
+    output = capsys.readouterr().out
+    assert "{h5,skills,behavior}" in output
+    assert "--ckpt" not in output
+
+
 def test_h5_convert_command(tmp_path, capsys):
     source = tmp_path / "input.h5"
     output = tmp_path / "converted.h5"
@@ -71,11 +78,12 @@ def test_skills_infer_command(tmp_path, monkeypatch):
 
     def fake_inference(**arguments):
         captured.update(arguments)
-        return SimpleNamespace(samples=12, episodes=2, dataset="skills/predicted")
+        return SimpleNamespace(samples=12, episodes=2, output_h5=arguments["output_h5"])
 
     monkeypatch.setattr(relaibotix.skilldetector, "run_inference", fake_inference)
     input_path = tmp_path / "input.h5"
     checkpoint = tmp_path / "model.ckpt"
+    output_path = tmp_path / "labeled.h5"
 
     assert main([
         "skills",
@@ -83,9 +91,8 @@ def test_skills_infer_command(tmp_path, monkeypatch):
         str(input_path),
         "--checkpoint",
         str(checkpoint),
-        "--features",
-        "x",
-        "gripper_state",
+        "--output",
+        str(output_path),
     ]) == 0
-    assert captured["feature_names"] == ["x", "gripper_state"]
     assert captured["h5_path"] == input_path
+    assert captured["output_h5"] == output_path

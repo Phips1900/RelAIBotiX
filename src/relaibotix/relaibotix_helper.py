@@ -6,7 +6,6 @@ import numpy as np
 from pathlib import Path
 import pandas as pd
 from omegaconf import OmegaConf, DictConfig
-from relaibotix.skilldetector.inference import run_inference
 from relaibotix.reliability.reliability_models import HybridReliabilityModel, FaultTree, MarkovChain
 from relaibotix.reliability.graph import create_ft_graph
 

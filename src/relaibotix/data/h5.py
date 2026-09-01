@@ -117,7 +117,15 @@ def inspect_h5(path: str | Path) -> H5Summary:
         if not isinstance(first_features, h5py.Dataset) or first_features.ndim != 2:
             raise ValueError("Each episode must contain a two-dimensional 'features' dataset.")
 
-        has_skills = all("labels/skill_id" in demo for demo in demos)
+        skill_candidates = (
+            "labels/filtered_skill_id",
+            "labels/predicted_skill_id",
+            "labels/skill_id",
+        )
+        skill_labels = next(
+            (name for name in skill_candidates if all(name in demo for demo in demos)),
+            None,
+        )
         return H5Summary(
             path=input_path,
             layout=layout,
@@ -125,7 +133,7 @@ def inspect_h5(path: str | Path) -> H5Summary:
             episodes=len(demos),
             features=int(first_features.shape[1]),
             feature_names=decode_feature_names(first_features),
-            skill_labels="labels/skill_id" if has_skills else None,
+            skill_labels=skill_labels,
             schema_version=schema_version,
         )
 
@@ -138,62 +146,43 @@ def _copy_attributes(source: h5py.AttributeManager, target: h5py.AttributeManage
             target[name] = str(value)
 
 
-def _copy_rows(source: h5py.Dataset, target: h5py.Dataset, row_count: int) -> None:
-    step = max(1, min(100_000, row_count))
-    for start in range(0, row_count, step):
-        target[start : start + step] = source[start : start + step]
-
-
-def _create_canonical_datasets(
-    output: h5py.File,
-    sample_count: int,
-    feature_count: int,
-    feature_dtype: np.dtype,
-) -> tuple[h5py.Dataset, h5py.Dataset, h5py.Dataset]:
-    features = output.create_dataset(
-        "features",
-        shape=(sample_count, feature_count),
-        dtype=feature_dtype,
-        chunks=True,
-        compression="gzip",
-    )
-    timestamps = output.create_dataset(
-        "timestamps",
-        shape=(sample_count,),
-        dtype=np.float64,
-        chunks=True,
-        compression="gzip",
-    )
-    episode_ids = output.create_dataset(
-        "episode_ids",
-        shape=(sample_count,),
-        dtype=np.int64,
-        chunks=True,
-        compression="gzip",
-    )
-    return features, timestamps, episode_ids
-
-
 def _convert_flat(source: h5py.File, output: h5py.File) -> None:
     source_features = source["features"]
-    sample_count, feature_count = source_features.shape
-    features, timestamps, episode_ids = _create_canonical_datasets(
-        output,
-        int(sample_count),
-        int(feature_count),
-        source_features.dtype,
-    )
-    _copy_rows(source_features, features, int(sample_count))
-    _copy_rows(source["timestamps"], timestamps, int(sample_count))
     source_episodes = source.get("episode_ids", source.get("episodes", source.get("labels")))
     if not isinstance(source_episodes, h5py.Dataset):
         raise ValueError("Flat input is missing episode IDs.")
     original_episode_ids = source_episodes[:]
     if not np.isfinite(original_episode_ids).all() or np.any(original_episode_ids < 0):
         raise ValueError("Flat input episode IDs must be finite and non-negative.")
-    boundaries = np.r_[True, original_episode_ids[1:] != original_episode_ids[:-1]]
-    episode_ids[:] = np.cumsum(boundaries, dtype=np.int64) - 1
-    _copy_attributes(source_features.attrs, features.attrs)
+    boundaries = np.flatnonzero(np.r_[True, original_episode_ids[1:] != original_episode_ids[:-1], True])
+    data = output.create_group("data")
+    for episode_index, (start, end) in enumerate(zip(boundaries[:-1], boundaries[1:])):
+        demo = data.create_group(f"demo_{episode_index:06d}")
+        features = demo.create_dataset(
+            "features",
+            data=source_features[start:end],
+            chunks=True,
+            compression="gzip",
+        )
+        _copy_attributes(source_features.attrs, features.attrs)
+        demo.create_dataset(
+            "timestamps/sim",
+            data=source["timestamps"][start:end],
+            chunks=True,
+            compression="gzip",
+        )
+        demo.create_dataset(
+            "episode/index",
+            data=np.full(end - start, episode_index, dtype=np.int64),
+            chunks=True,
+            compression="gzip",
+        )
+        demo.create_dataset(
+            "labels/skill_id",
+            data=np.full(end - start, -1, dtype=np.int64),
+            chunks=True,
+            compression="gzip",
+        )
 
     source_group = output.create_group("source")
     main_names = {"features", "timestamps", "episode_ids", "episodes", "labels"}
@@ -203,40 +192,10 @@ def _convert_flat(source: h5py.File, output: h5py.File) -> None:
 
 
 def _convert_multi_episode(source: h5py.File, output: h5py.File) -> None:
-    demos = [source["data"][name] for name in sorted(source["data"].keys())]
-    first_features = demos[0]["features"]
-    sample_count = sum(int(demo["features"].shape[0]) for demo in demos)
-    feature_count = int(first_features.shape[1])
-    features, timestamps, episode_ids = _create_canonical_datasets(
-        output,
-        sample_count,
-        feature_count,
-        first_features.dtype,
-    )
-    _copy_attributes(first_features.attrs, features.attrs)
-
-    has_source_skills = all("labels/skill_id" in demo for demo in demos)
-    source_skills = None
-    if has_source_skills:
-        source_group = output.create_group("source")
-        source_skills = source_group.create_dataset(
-            "skill_ids",
-            shape=(sample_count,),
-            dtype=np.int64,
-            chunks=True,
-            compression="gzip",
-        )
-
-    offset = 0
-    for episode_index, demo in enumerate(demos):
-        length = int(demo["features"].shape[0])
-        end = offset + length
-        features[offset:end] = demo["features"][:]
-        timestamps[offset:end] = demo["timestamps/sim"][:]
-        episode_ids[offset:end] = episode_index
-        if source_skills is not None:
-            source_skills[offset:end] = demo["labels/skill_id"][:]
-        offset = end
+    source.copy("data", output)
+    for name in source.keys():
+        if name != "data" and name not in output:
+            source.copy(name, output, name=name)
 
 
 def convert_h5(
@@ -245,10 +204,10 @@ def convert_h5(
     *,
     overwrite: bool = False,
 ) -> Path:
-    """Convert a supported input to the canonical, flat RelAIBotiX layout.
+    """Convert a supported input to the canonical episode-grouped layout.
 
-    The input file is never modified. Existing skill predictions are retained below
-    ``/source`` and are not treated as fresh detector output.
+    The input file is never modified. Already grouped canonical input is copied
+    without flattening or discarding labels and metadata.
     """
 
     source_path = Path(input_path)

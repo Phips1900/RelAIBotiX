@@ -82,7 +82,8 @@ def test_convert_flat_preserves_old_predictions_as_source_data(tmp_path):
     with h5py.File(output, "r") as h5_file:
         assert h5_file.attrs["format"] == "relaibotix_hdf5"
         assert h5_file.attrs["schema_version"] == "1.0"
-        np.testing.assert_array_equal(h5_file["episode_ids"][:], [0, 0, 0, 1, 1, 1])
+        np.testing.assert_array_equal(h5_file["data/demo_000000/episode/index"][:], [0, 0, 0])
+        np.testing.assert_array_equal(h5_file["data/demo_000001/episode/index"][:], [1, 1, 1])
         np.testing.assert_array_equal(
             h5_file["source/predicted_labels"][:],
             [0, 0, 1, 1, 1, 0],
@@ -90,7 +91,7 @@ def test_convert_flat_preserves_old_predictions_as_source_data(tmp_path):
         assert "predicted_labels" not in h5_file
 
 
-def test_convert_multi_episode_flattens_episodes(tmp_path):
+def test_convert_multi_episode_preserves_canonical_groups(tmp_path):
     source = tmp_path / "mobile.h5"
     output = tmp_path / "canonical.h5"
     with h5py.File(source, "w") as h5_file:
@@ -109,12 +110,12 @@ def test_convert_multi_episode_flattens_episodes(tmp_path):
     convert_h5(source, output)
     summary = inspect_h5(output)
 
-    assert summary.layout == "flat"
+    assert summary.layout == "multi_episode"
     assert summary.episodes == 2
     assert summary.samples == 5
     with h5py.File(output, "r") as h5_file:
-        np.testing.assert_array_equal(h5_file["episode_ids"][:], [0, 0, 0, 1, 1])
-        np.testing.assert_array_equal(h5_file["source/skill_ids"][:], [-1, -1, -1, -1, -1])
+        np.testing.assert_array_equal(h5_file["data/demo_000000/labels/skill_id"][:], [-1, -1, -1])
+        np.testing.assert_array_equal(h5_file["data/demo_000001/labels/skill_id"][:], [-1, -1])
 
 
 def test_convert_renumbers_repeated_flat_episode_ids(tmp_path):
@@ -129,5 +130,7 @@ def test_convert_renumbers_repeated_flat_episode_ids(tmp_path):
     convert_h5(source, output)
 
     with h5py.File(output, "r") as converted:
-        assert converted["episode_ids"][:].tolist() == [0, 0, 1, 1, 2, 2]
+        assert sorted(converted["data"].keys()) == [
+            "demo_000000", "demo_000001", "demo_000002"
+        ]
     assert inspect_h5(output).episodes == 3

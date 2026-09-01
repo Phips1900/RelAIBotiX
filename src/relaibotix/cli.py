@@ -78,8 +78,11 @@ def _behavior_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--skill-labels",
-        default="skills/predicted",
-        help="HDF5 dataset containing detector-produced skill IDs.",
+        default=None,
+        help=(
+            "Override the skill-label dataset. By default, filtered predictions, "
+            "raw predictions, then ground truth are tried in that order."
+        ),
     )
     return parser
 
@@ -104,20 +107,14 @@ def _skills_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("input", type=Path)
     parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument(
-        "--features",
-        nargs="+",
-        required=True,
-        help="Ordered HDF5 feature names expected by the checkpoint.",
-    )
-    parser.add_argument("--model", default="cnn_transformer")
-    parser.add_argument("--window-size", type=int)
-    parser.add_argument("--num-classes", type=int)
-    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--modality", choices=("timeseries", "camera", "hybrid"), default="timeseries")
+    parser.add_argument("--lerobot-root", type=Path)
+    parser.add_argument("--batch-size", type=int, default=512)
+    parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
-    parser.add_argument("--min-segment-length", type=int, default=10)
-    parser.add_argument("--short-episodes", choices=("pad", "error"), default="pad")
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--minimum-skill-frames", type=int, default=5)
+    parser.add_argument("--target-stride", type=int, default=1)
     return parser
 
 
@@ -130,45 +127,41 @@ def _run_skills(arguments: Sequence[str]) -> int:
     result = run_inference(
         h5_path=args.input,
         checkpoint_path=args.checkpoint,
-        model_type=args.model,
-        feature_names=args.features,
-        window_size=args.window_size,
-        num_classes=args.num_classes,
+        output_h5=args.output,
+        modality=args.modality,
+        lerobot_root=args.lerobot_root,
         batch_size=args.batch_size,
+        num_workers=args.num_workers,
         device=args.device,
-        min_segment_length=args.min_segment_length,
-        short_episode_policy=args.short_episodes,
-        overwrite=args.overwrite,
+        minimum_skill_frames=args.minimum_skill_frames,
+        target_stride=args.target_stride,
     )
     print(
         f"Skill inference: {result.samples} samples across {result.episodes} episodes "
-        f"-> /{result.dataset}"
+        f"-> {result.output_h5}"
     )
     return 0
 
 
-def _run_legacy_analysis(arguments: Sequence[str]) -> int:
-    """Keep the existing pipeline callable until the new pipeline replaces it."""
-
-    from .handler import _cli_relaibotix
-
-    previous_argv = sys.argv
-    try:
-        sys.argv = ["relaibotix", *arguments]
-        _cli_relaibotix()
-    finally:
-        sys.argv = previous_argv
-    return 0
+def _top_level_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="relaibotix",
+        description="Validate data, run skill inference, and analyze robot behavior.",
+    )
+    parser.add_argument("command", nargs="?", choices=("h5", "skills", "behavior"))
+    return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if not arguments:
+        _top_level_parser().print_help()
+        return 0
     if arguments and arguments[0] == "h5":
         return _run_h5(arguments[1:])
     if arguments and arguments[0] == "behavior":
         return _run_behavior(arguments[1:])
     if arguments and arguments[0] == "skills":
         return _run_skills(arguments[1:])
-    if arguments and arguments[0] == "analyze":
-        return _run_legacy_analysis(arguments[1:])
-    return _run_legacy_analysis(arguments)
+    _top_level_parser().parse_args(arguments)
+    return 0
