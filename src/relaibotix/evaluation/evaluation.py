@@ -22,13 +22,6 @@ def skill_failure_probs_from_fts(hybrid_model: HybridReliabilityModel) -> Dict[s
     return out
 
 
-# ----- Task success rate from analyzer summary -----
-def task_success_rate_from_summary(summary: Dict[str, pd.DataFrame]) -> float:
-    if "overall" not in summary or "success_rate_percent" not in summary["overall"].columns:
-        return 0.0
-    return float(summary["overall"]["success_rate_percent"].iloc[0])
-
-
 def plot_skill_failures_separate(
         ft_failure: Dict[str, float],
         absorb_failure: Dict[str, float],
@@ -213,7 +206,6 @@ def sensitivity_analysis(
 def write_report_json(
         name: str,
         system_failure_prob: float,
-        task_success_rate_percent: float,
         base_probs: Dict[str, float],
         skill_pf: Dict[str, float],
         outpath: Path,
@@ -221,7 +213,6 @@ def write_report_json(
     payload = {
         "name": name,
         "system_failure_prob": float(system_failure_prob),
-        "task_success_rate_percent": float(task_success_rate_percent),
         "components": [{"name": k, "failure_prob": float(v)} for k, v in base_probs.items()],
         "skills": [{"name": s, "skill_failure_prob": float(p)} for s, p in skill_pf.items()],
     }
@@ -236,7 +227,6 @@ def make_report_payload(
         *,
         name: str,
         system_failure_prob: float,
-        task_success_rate_percent: float,
         base_probs: Dict[str, float],
         skill_pf: Dict[str, float],
         summary: Dict[str, pd.DataFrame],
@@ -261,13 +251,11 @@ def make_report_payload(
     payload: Dict[str, Any] = {
         "name": name,
         "system_failure_prob": float(system_failure_prob),
-        "task_success_rate_percent": float(task_success_rate_percent),
         "base_probs_per_min": {k: float(v) for k, v in (base_probs or {}).items()},
         "skill_failure_probabilities": {k: float(v) for k, v in (skill_pf or {}).items()},
         "overall": {
             "n_runs": int(overall.get("n_runs", 0)),
             "total_run_time_sec": float(overall.get("total_run_time_sec", 0.0)),
-            "success_rate_percent": float(overall.get("success_rate_percent", 0.0)),
         },
         "skill_time": skill_time_df.to_dict(orient="records"),
         "component_usage": comp_usage_df.to_dict(orient="records"),
@@ -281,7 +269,6 @@ def write_report_json_extended(
         *,
         name: str,
         system_failure_prob: float,
-        task_success_rate_percent: float,
         base_probs: Dict[str, float],
         skill_pf: Dict[str, float],
         summary: Dict[str, pd.DataFrame],
@@ -291,7 +278,6 @@ def write_report_json_extended(
     payload = make_report_payload(
         name=name,
         system_failure_prob=system_failure_prob,
-        task_success_rate_percent=task_success_rate_percent,
         base_probs=base_probs,
         skill_pf=skill_pf,
         summary=summary,

@@ -27,7 +27,6 @@ These traditional approaches are applied manually and do not consider frequent s
 ![RelAIBotiX Framework](artifacts/figures/RelAIBotiX.png)
 
 The framework provides:
-- Fault & uncertainty injection in simulation
 - Skill detection 
 - Behavioral analysis 
 - Automatic generation of hybrid reliability models (DTMC, Fault Trees, PRISM)
@@ -73,37 +72,27 @@ This will produce:
 - A reliability report (PDF + JSON) in `results/reports/`
 - A PRISM model in `results/prism/`
 
-**Note:**  
-- Training data demonstrations for imitation learning are provided in  
-  `datasets/LeRobot_Demonstrations/`. This folder contains **100 demonstrations** collected for policy training.  
-- Additional inference and inference-with-fault scripts are available in  
-  `lerobot/scripts/`.
-
----
-
 ### Available Commands
 
 The CLI supports different modes:
 
+- **Validate an HDF5 input**
+
+```bash
+relaibotix h5 validate <dataset.h5>
+```
+
+- **Behavioral analysis**
+
+```bash
+relaibotix behavior <labeled_dataset.h5> --output artifacts/behavior
+```
+
 - **Full pipeline**
 
 ```bash
-relaibotix --h5 <dataset.h5> 
+relaibotix --h5 <dataset.h5>
 ```
-
-- **Skill detection only**
-
-```bash
-relaibotix_skill_detection --h5 <dataset.h5> --ckpt artifacts/checkpoints/skill_detector.ckpt
-```
-
-- **Faulty evaluation only**
-
-```bash
-relaibotix_faulty --h5 <dataset_with_faults.h5>
-```
-
----
 
 ### Arguments
 
@@ -114,9 +103,6 @@ relaibotix_faulty --h5 <dataset_with_faults.h5>
 | `--config`     | Path to robot configuration JSON                | `config_files/robots/so_arm_config.json`     |
 | `--output`     | Output directory for reports                    | `results/reports`                            |
 | `--prism`      | Output directory for PRISM models               | `results/prism`                              |
-| `--tol`        | XY tolerance for faulty evaluation [m]          | `0.02`                                       |
-| `--target-x`   | Target X position [m]                           | `0.20`                                       |
-| `--target-y`   | Target Y position [m]                           | `-0.15`                                      |
 
 ---
 

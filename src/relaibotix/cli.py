@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 from typing import Sequence
 
+from .behavioral import BehavioralAnalyzer
 from .data import convert_h5, inspect_h5, validate_h5
 
 
@@ -68,6 +69,34 @@ def _run_h5(arguments: Sequence[str]) -> int:
     return 0 if _print_validation(output) else 1
 
 
+def _behavior_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="relaibotix behavior",
+        description="Calculate behavioral metrics from a labeled canonical HDF5 file.",
+    )
+    parser.add_argument("input", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--skill-labels",
+        default="skills/predicted",
+        help="HDF5 dataset containing detector-produced skill IDs.",
+    )
+    return parser
+
+
+def _run_behavior(arguments: Sequence[str]) -> int:
+    args = _behavior_parser().parse_args(arguments)
+    result = BehavioralAnalyzer().analyze_h5(
+        args.input,
+        skill_labels_dataset=args.skill_labels,
+    )
+    result.write_csv(args.output)
+    result.write_json(args.output / "behavior.json")
+    print(f"Behavioral analysis: {len(result.segments)} segments")
+    print(f"Results: {args.output}")
+    return 0
+
+
 def _run_legacy_analysis(arguments: Sequence[str]) -> int:
     """Keep the existing pipeline callable until the new pipeline replaces it."""
 
@@ -86,6 +115,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments and arguments[0] == "h5":
         return _run_h5(arguments[1:])
+    if arguments and arguments[0] == "behavior":
+        return _run_behavior(arguments[1:])
     if arguments and arguments[0] == "analyze":
         return _run_legacy_analysis(arguments[1:])
     return _run_legacy_analysis(arguments)

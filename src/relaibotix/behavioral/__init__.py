@@ -1,6 +1,6 @@
-try:
-    from .behavioral_analysis import BehavioralAnalyzer  # noqa: F401
-except Exception:
-    BehavioralAnalyzer = None  # type: ignore
+"""Behavioral analysis public API."""
 
-__all__ = ["BehavioralAnalyzer"]
+from .analysis import BehavioralAnalyzer, BehavioralThresholds
+from .results import BehavioralResult
+
+__all__ = ["BehavioralAnalyzer", "BehavioralResult", "BehavioralThresholds"]

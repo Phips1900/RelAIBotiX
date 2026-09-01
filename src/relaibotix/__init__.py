@@ -1,10 +1,6 @@
 from importlib.metadata import version, PackageNotFoundError
 
-# Public API shortcuts
-try:
-    from .behavioral.behavioral_analysis import BehavioralAnalyzer  # noqa: F401
-except Exception:
-    BehavioralAnalyzer = None  # type: ignore
+from .behavioral import BehavioralAnalyzer, BehavioralResult, BehavioralThresholds
 
 try:
     from .reliability.reliability_models import HybridReliabilityModel, MarkovChain, FaultTree  # noqa: F401
@@ -13,6 +9,8 @@ except Exception:
 
 __all__ = [
     "BehavioralAnalyzer",
+    "BehavioralResult",
+    "BehavioralThresholds",
     "HybridReliabilityModel",
     "MarkovChain",
     "FaultTree",

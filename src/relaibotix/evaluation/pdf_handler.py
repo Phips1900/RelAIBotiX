@@ -43,14 +43,6 @@ def create_pdf_from_json_and_plots(json_file, plot_files, filename='output.pdf')
 
     pdf.ln(10)  # Line break
 
-    # Add Task Success Rate
-    pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, 'Task Success Rate:', ln=True)
-    pdf.set_font('Arial', '', 14)
-    pdf.cell(0, 10, f"{data['task_success_rate_percent']:}", ln=True)
-
-    pdf.ln(10)  # Line break
-
     # Add Components Information
     pdf.set_font('Arial', 'B', 14)
     pdf.cell(0, 10, 'Components:', ln=True)
@@ -122,7 +114,6 @@ def create_pdf_extended(json_file: str, plot_files, filename: str = "output.pdf"
     # Top stats
     pdf.set_font("Arial", "", 12)
     pdf.cell(0, 8, f"System failure probability: {data.get('system_failure_prob', 0.0):.2E}", ln=True)
-    pdf.cell(0, 8, f"Task success rate: {data.get('task_success_rate_percent', 0.0):.2f}%", ln=True)
     ov = data.get("overall", {})
     pdf.cell(0, 8, f"Runs: {ov.get('n_runs',0)}", ln=True)
     pdf.cell(0, 8, f"Total run time: {_sec_to_str(ov.get('total_run_time_sec',0.0))}", ln=True)

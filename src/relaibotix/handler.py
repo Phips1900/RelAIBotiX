@@ -2,7 +2,6 @@ import argparse
 
 from relaibotix.behavioral.behavioral_analysis_v2 import *
 from relaibotix.evaluation.evaluation import *
-from relaibotix.evaluation.evaluation_faulty import *
 from relaibotix.evaluation.pdf_handler import *
 from relaibotix.reliability.prism import *
 
@@ -38,7 +37,7 @@ def run_relaibotix(h5_path: str,
                       for n in f["features"].attrs["feature_names"]]
     features_df = pd.DataFrame(features_arr)
     labels_pred_filter = filter_short_segments(labels_pred)
-    an = BehavioralAnalyzer(pos_success_tol=0.02)  # tune eps_abs/dc_thr/rms_thr/range_thr later if needed
+    an = BehavioralAnalyzer()
     traces: List[RunTrace] = an.analyze(
         features=features_df,
         feature_names=feat_names,
@@ -102,8 +101,6 @@ def run_relaibotix(h5_path: str,
 
     skill_pf = skill_failure_probs_from_fts(hybrid_model)
 
-    task_success = task_success_rate_from_summary(summary)
-
     fail_abs_states = [s for s in mc.get_absorbing_states() if s.endswith("_failure")]
     skills = [s[:-8] for s in fail_abs_states]  # strip "_failure"
 
@@ -148,7 +145,6 @@ def run_relaibotix(h5_path: str,
     report_json = write_report_json_extended(
         name="RelAIBotiX - Reliability Report",
         system_failure_prob=system_reliability,
-        task_success_rate_percent=task_success,
         base_probs=base_p_per_min,
         skill_pf=skill_pf,
         summary=summary,
@@ -199,23 +195,6 @@ def _cli_relaibotix():
         config_path=args.config,
         out_dir=args.output,
         out_dir_prism=args.prism
-    )
-
-
-def _cli_faulty_evaluation_relaibotix():
-    parser = argparse.ArgumentParser(description="Evaluate faulty vs normal runs")
-    parser.add_argument("--h5", required=True, help="Path to H5 dataset")
-    parser.add_argument("--output", default="artifacts/reports/faulty", help="Output directory")
-    parser.add_argument("--tol", type=float, default=0.02, help="XY tolerance for success [m]")
-    parser.add_argument("--target-x", type=float, default=0.20, help="Target X [m]")
-    parser.add_argument("--target-y", type=float, default=-0.15, help="Target Y [m]")
-    args = parser.parse_args()
-
-    run_evaluation_faulty(
-        h5_path=args.h5,
-        out_dir=args.output,
-        tol=args.tol,
-        target_xy=(args.target_x, args.target_y)
     )
 
 

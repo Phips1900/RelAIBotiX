@@ -37,3 +37,27 @@ def test_h5_convert_command(tmp_path, capsys):
     text = capsys.readouterr().out
     assert "Converted:" in text
     assert "VALID:" in text
+
+
+def test_behavior_command(tmp_path):
+    input_path = tmp_path / "labeled.h5"
+    output_path = tmp_path / "behavior"
+    with h5py.File(input_path, "w") as output:
+        features = output.create_dataset(
+            "features",
+            data=np.array([
+                [0.0, 0.0],
+                [1.0, 0.5],
+                [0.5, -0.5],
+            ]),
+        )
+        features.attrs["feature_names"] = ["joint_pos_1", "joint_vel_1"]
+        output.create_dataset("timestamps", data=[0.0, 0.5, 1.0])
+        output.create_dataset("episode_ids", data=[0, 0, 0])
+        skills = output.create_group("skills")
+        skills.create_dataset("predicted", data=[0, 0, 1])
+
+    assert main(["behavior", str(input_path), "--output", str(output_path)]) == 0
+    assert (output_path / "segments.csv").is_file()
+    assert (output_path / "joint_metrics.csv").is_file()
+    assert (output_path / "behavior.json").is_file()

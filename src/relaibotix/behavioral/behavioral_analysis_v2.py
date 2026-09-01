@@ -34,10 +34,6 @@ class RunTrace:
     t_end: float
     duration: float
     skill_sequence: List[str]
-    goal_pos: Tuple[float, float, float]
-    final_pos: Tuple[float, float, float]
-    pos_error_norm: float
-    success: bool
     segments: List[SkillSegment]
 
 
@@ -50,9 +46,6 @@ class BehavioralAnalyzer:
     def __init__(
             self,
             *,
-            # success metric
-            pos_success_tol: float = 0.02,  # meters (XY success check handled elsewhere)
-
             # generic “nonzero” cutoff for duty()
             eps_abs: float = 1e-3,
 
@@ -91,8 +84,6 @@ class BehavioralAnalyzer:
 
     ):
         # store
-        self.pos_success_tol = pos_success_tol
-
         self.eps_abs = eps_abs
         self.dc_thr = dc_thr
         self.rms_thr = rms_thr
@@ -125,7 +116,6 @@ class BehavioralAnalyzer:
             feature_names: List[str],
             labels: np.ndarray,
             timestamps: np.ndarray,
-            trials_csv: Optional[pd.DataFrame] = None,
             episode_labels: Optional[np.ndarray] = None
     ) -> List[RunTrace]:
         # build component mapping from feature_names (auto)
@@ -139,8 +129,6 @@ class BehavioralAnalyzer:
         feat_names = list(feature_names)
 
         for run_id, (i0, i1) in enumerate(run_bounds):
-            # per-run slice
-            X_run = features.iloc[i0:i1 + 1].to_numpy(dtype=float)
             # segment segments via run-length on labels slice
             segments = self._segment_skills(labels[i0:i1 + 1], timestamps[i0:i1 + 1], offset=i0)
 
@@ -148,22 +136,12 @@ class BehavioralAnalyzer:
             for se in segments:
                 se.components = self._component_metrics(features, component_cols, timestamps, se.start_idx, se.end_idx)
 
-            # success check
-            tol = self.pos_success_tol
-            res = self.compute_run_success(run_id, X_run, feat_names, trials_csv, tol)
-            success = bool(res["success"])
-            pos_err = float(res["pos_err"])
-            goal = (float(res["goal"][0]), float(res["goal"][1]), float("nan"))
-            final = (float(res["final"][0]), float(res["final"][1]), float("nan"))
-
             traces.append(RunTrace(
                 run_id=run_id,
                 start_idx=i0, end_idx=i1,
                 t_start=float(timestamps[i0]), t_end=float(timestamps[i1]),
                 duration=float(timestamps[i1] - timestamps[i0]),
                 skill_sequence=[se.name for se in segments],
-                goal_pos=goal, final_pos=final,
-                pos_error_norm=pos_err, success=success,
                 segments=segments
             ))
         return traces
@@ -192,69 +170,6 @@ class BehavioralAnalyzer:
             if s == "gripper_state":
                 comp.setdefault("gripper", {})["state"] = idx
         return comp
-
-    def _get_col_index(self, names, key):
-        try:
-            return names.index(key)
-        except ValueError:
-            return None
-
-    def _success_from_csv(self, trials_csv, run_id, tol):
-        if trials_csv is None or run_id not in trials_csv.index:
-            return None
-        goal = tuple(trials_csv.loc[run_id, ["x_plan", "y_plan"]].astype(float))
-        final = tuple(trials_csv.loc[run_id, ["x_real", "y_real"]].astype(float))
-        dx, dy = float(goal[0] - final[0]), float(goal[1] - final[1])
-        max_abs_xy = max(abs(dx), abs(dy))
-        return {
-            "success": (max_abs_xy <= tol),
-            "pos_err": max_abs_xy,
-            "goal": goal,
-            "final": final,
-            "source": "csv",
-        }
-
-    def _success_from_cxcy(self, X_run, feat_names, tol, target_xy=(0.20, -0.15)):
-        if X_run is None or len(X_run) == 0 or not feat_names:
-            return None
-        i_cx = self._get_col_index(feat_names, "cx")
-        i_cy = self._get_col_index(feat_names, "cy")
-        if i_cx is None or i_cy is None:
-            return None
-        cx_last = float(X_run[-1, i_cx])
-        cy_last = float(X_run[-1, i_cy])
-        gx, gy = map(float, target_xy)
-        dx, dy = gx - cx_last, gy - cy_last
-        max_abs_xy = max(abs(dx), abs(dy))
-        return {
-            "success": (max_abs_xy <= tol),
-            "pos_err": max_abs_xy,
-            "goal": (gx, gy),
-            "final": (cx_last, cy_last),
-            "source": "features_cxcy_last",
-        }
-
-    def compute_run_success(self, run_id, X_run, feat_names, trials_csv, tol):
-        """
-        Returns dict with keys: success (bool), pos_err (float), goal (xy), final (xy), source (str)
-        If neither source is available, returns success=False and pos_err=nan with source='none'.
-        """
-        out = self._success_from_csv(trials_csv, run_id, tol)
-        if out is not None:
-            return out
-
-        out = self._success_from_cxcy(X_run, feat_names, tol)
-        if out is not None:
-            return out
-
-        # fallback: nothing available
-        return {
-            "success": False,  # or None if you prefer tri-state
-            "pos_err": float("nan"),
-            "goal": (float("nan"), float("nan")),
-            "final": (float("nan"), float("nan")),
-            "source": "none",
-        }
 
     def _detect_runs_from_episode_labels(self, ep_labels: np.ndarray) -> List[Tuple[int, int]]:
         """
@@ -771,9 +686,6 @@ class BehavioralAnalyzer:
             t_start=r.t_start, t_end=r.t_end,
             duration=r.duration,
             skill_sequence=r.skill_sequence,
-            goal_x=r.goal_pos[0], goal_y=r.goal_pos[1],
-            final_x=r.final_pos[0], final_y=r.final_pos[1],
-            pos_error_norm=r.pos_error_norm, success=r.success
         ) for r in traces])
 
         # ---- segments_df
@@ -935,7 +847,7 @@ class BehavioralAnalyzer:
         """
         Returns a dict of DataFrames:
           - sequences:        frequency of skill sequences (count, percent)
-          - overall:          one-row overall summary (totals, success rate)
+          - overall:          one-row overall timing summary
           - skill_time:       per-skill total/avg time
           - comp_usage:       per-skill × component usage/time
           - joint_velocity:   per-skill × joint velocity peaks (absmax totals, avg max)
@@ -949,11 +861,10 @@ class BehavioralAnalyzer:
         n_runs = len(runs_df)
         seq_counts["percent"] = 100.0 * seq_counts["count"] / max(n_runs, 1)
 
-        # --- 2) Overall totals & success rate ---
+        # --- 2) Overall totals ---
         overall = pd.DataFrame([{
             "n_runs": n_runs,
             "total_run_time_sec": float(runs_df["duration"].sum()),
-            "success_rate_percent": 100.0 * float(runs_df["success"].mean()) if n_runs else 0.0,
         }])
 
         # --- 3) Per-skill total/average time ---
@@ -1595,23 +1506,17 @@ class BehavioralAnalyzer:
 #
 # features_df = pd.DataFrame(features_arr)
 #
-# # 2) Load CSV with goal/final per run
-# trials_csv = pd.read_csv(
-#     "/Users/Phips1900/PhD/Research/RelAIBotiX/datasets/franka_trial_summary_100.csv")  # must have goal_x/y/z, final_x/y/z
-#
 # # 3) Analyze
-# an = BehavioralAnalyzer(pos_success_tol=0.02)  # tune eps_abs/dc_thr/rms_thr/range_thr later if needed
+# an = BehavioralAnalyzer()
 # traces: List[RunTrace] = an.analyze(
 #     features=features_df,
 #     feature_names=feat_names,
 #     labels=labels,
-#     timestamps=timestamps,
-#     trials_csv=trials_csv
+#     timestamps=timestamps
 # )
 #
 # print(len(traces), "runs")
 # print(traces[0].skill_sequence)
-# print(traces[3].success, traces[3].pos_error_norm)
 # for se in traces[8].segments:
 #     print(se.idx, se.name, se.duration)
 #
@@ -1625,7 +1530,7 @@ class BehavioralAnalyzer:
 # summ = an.summarize(traces)
 #
 # print(summ["sequences"])      # counts + %
-# print(summ["overall"])        # n_runs, total time, success %
+# print(summ["overall"])        # n_runs and total time
 # print(summ["skill_time"])     # per-skill totals/averages
 # print(summ["comp_usage"]      # active % and times per skill×component
 #       .sort_values(["skill","active_pct_episodes"], ascending=[True, False])
