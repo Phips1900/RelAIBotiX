@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field
 import json
 from pathlib import Path
 
@@ -17,6 +18,7 @@ class BehavioralResult:
     joint_metrics: pd.DataFrame
     skill_summary: pd.DataFrame
     joint_summary: pd.DataFrame
+    metadata: dict[str, object] = field(default_factory=dict)
 
     def tables(self) -> dict[str, pd.DataFrame]:
         return {
@@ -44,6 +46,7 @@ class BehavioralResult:
             name: json.loads(table.to_json(orient="records"))
             for name, table in self.tables().items()
         }
+        payload["metadata"] = self.metadata
         with destination.open("w", encoding="utf-8") as output:
             json.dump(payload, output, indent=2)
         return destination
@@ -57,4 +60,7 @@ class BehavioralResult:
         missing = [name for name in required if name not in payload]
         if missing:
             raise ValueError(f"Behavior JSON is missing tables: {', '.join(missing)}")
-        return cls(**{name: pd.DataFrame(payload[name]) for name in required})
+        return cls(
+            **{name: pd.DataFrame(payload[name]) for name in required},
+            metadata=dict(payload.get("metadata", {})),
+        )

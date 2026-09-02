@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import math
 from pathlib import Path
@@ -18,23 +18,21 @@ from .fault_tree import FaultTreeModel, bdd_probability, bottom_up_probability
 
 
 @dataclass(frozen=True)
-class ExposureMultipliers:
-    velocity: tuple[float, float, float] = (1.0, 2.0, 5.0)
-    effort: tuple[float, float, float] = (1.0, 1.25, 1.75)
-
-
-@dataclass(frozen=True)
 class ReliabilityResult:
     component_failures: pd.DataFrame
     fault_trees: dict[str, FaultTreeModel]
     skill_probabilities: pd.DataFrame
     dtmc: DTMCModel
     dtmc_solution: DTMCSolution
+    exposure_assumptions: dict[str, object]
+    behavior_thresholds_verified: bool | None
 
     def write_json(self, output_path: str | Path) -> Path:
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         payload = {
+            "exposure_assumptions": self.exposure_assumptions,
+            "behavior_thresholds_verified": self.behavior_thresholds_verified,
             "component_failures": json.loads(self.component_failures.to_json(orient="records")),
             "skill_probabilities": json.loads(self.skill_probabilities.to_json(orient="records")),
             "fault_trees": {
@@ -96,15 +94,50 @@ def _matching_usage(joint_summary: pd.DataFrame, skill_id: int, sources: tuple[s
     return rows[rows["joint"].map(matches)]
 
 
+def _distance_exposure(
+    distance: float,
+    thresholds: tuple[float, float] | None,
+    multipliers: tuple[float, float, float],
+) -> tuple[str, float]:
+    """Classify mean travel per skill occurrence without dataset normalization."""
+
+    if thresholds is None or not math.isfinite(distance):
+        return "not_configured", 1.0
+    medium, high = thresholds
+    if distance < medium:
+        return "low", multipliers[0]
+    if distance < high:
+        return "medium", multipliers[1]
+    return "high", multipliers[2]
+
+
 def analyze_reliability(
     behavior: BehavioralResult,
     config: RobotConfig,
-    *,
-    multipliers: ExposureMultipliers | None = None,
 ) -> ReliabilityResult:
     """Create and solve one component fault tree for every observed skill."""
 
-    factors = multipliers or ExposureMultipliers()
+    assumptions = config.exposure_assumptions
+    expected_thresholds = {
+        key: value
+        for key, value in assumptions.as_dict().items()
+        if key in {
+            "position_step",
+            "velocity_active",
+            "effort_active",
+            "velocity_bands",
+            "effort_bands",
+        }
+    }
+    recorded_thresholds = behavior.metadata.get("behavioral_thresholds")
+    thresholds_verified: bool | None = None
+    if recorded_thresholds is not None:
+        thresholds_verified = recorded_thresholds == expected_thresholds
+        if not thresholds_verified:
+            raise ValueError(
+                "Behavioral results used different exposure thresholds. "
+                "Run the behavior command again with the same robot configuration."
+            )
     required_skill_columns = {"skill_id", "skill", "n_segments", "total_duration"}
     if not required_skill_columns.issubset(behavior.skill_summary.columns):
         missing = sorted(required_skill_columns - set(behavior.skill_summary.columns))
@@ -148,7 +181,9 @@ def analyze_reliability(
             else:
                 weighted_velocity_exposure = sum(
                     duration * multiplier
-                    for duration, multiplier in zip(velocity_times, factors.velocity)
+                    for duration, multiplier in zip(
+                        velocity_times, assumptions.velocity_multipliers
+                    )
                 )
                 base_exposure = sum(velocity_times)
                 if weighted_velocity_exposure == 0.0:
@@ -160,9 +195,21 @@ def analyze_reliability(
             if effort_total > 0.0:
                 effort_factor = sum(
                     duration * multiplier
-                    for duration, multiplier in zip(effort_times, factors.effort)
+                    for duration, multiplier in zip(
+                        effort_times, assumptions.effort_multipliers
+                    )
                 ) / effort_total
-            effective_exposure = weighted_velocity_exposure * effort_factor
+            velocity_factor = (
+                weighted_velocity_exposure / base_exposure
+                if base_exposure > 0.0
+                else 1.0
+            )
+            distance_band, distance_factor = _distance_exposure(
+                average_distance,
+                component.distance_thresholds,
+                assumptions.distance_multipliers,
+            )
+            effective_exposure = weighted_velocity_exposure * effort_factor * distance_factor
             rate = _hazard_rate(component.failure_probability, config.probability_basis)
             hazard = rate * effective_exposure
             probability = 1.0 if math.isinf(hazard) else -math.expm1(-hazard)
@@ -175,10 +222,29 @@ def analyze_reliability(
                 "average_skill_duration": average_duration,
                 "average_active_time": average_active,
                 "average_traveled_distance": average_distance,
+                "distance_unit": component.distance_unit,
+                "distance_medium_threshold": (
+                    component.distance_thresholds[0]
+                    if component.distance_thresholds is not None
+                    else None
+                ),
+                "distance_high_threshold": (
+                    component.distance_thresholds[1]
+                    if component.distance_thresholds is not None
+                    else None
+                ),
+                "distance_band": distance_band,
+                "distance_factor": distance_factor,
+                "velocity_multipliers": "/".join(map(str, assumptions.velocity_multipliers)),
+                "effort_multipliers": "/".join(map(str, assumptions.effort_multipliers)),
+                "distance_multipliers": "/".join(map(str, assumptions.distance_multipliers)),
+                "assumption_source": assumptions.source,
                 "velocity_time_low": velocity_times[0],
                 "velocity_time_medium": velocity_times[1],
                 "velocity_time_high": velocity_times[2],
                 "base_exposure": base_exposure,
+                "weighted_velocity_exposure": weighted_velocity_exposure,
+                "velocity_factor": velocity_factor,
                 "effort_factor": effort_factor,
                 "effective_exposure": effective_exposure,
                 "base_failure_probability": component.failure_probability,
@@ -213,7 +279,65 @@ def analyze_reliability(
         skill_probabilities=skill_probabilities,
         dtmc=dtmc,
         dtmc_solution=solve_dtmc(dtmc),
+        exposure_assumptions=assumptions.as_dict(),
+        behavior_thresholds_verified=thresholds_verified,
     )
+
+
+def analyze_component_sensitivity(
+    behavior: BehavioralResult,
+    config: RobotConfig,
+    *,
+    factor: float = 10.0,
+    baseline: ReliabilityResult | None = None,
+) -> pd.DataFrame:
+    """Rank one-at-a-time component perturbations by system-level influence."""
+
+    if not math.isfinite(factor) or factor <= 0.0 or factor == 1.0:
+        raise ValueError("Sensitivity factor must be positive and different from one.")
+    baseline_result = baseline or analyze_reliability(behavior, config)
+    baseline_probability = baseline_result.dtmc_solution.failure_probability
+    rows: list[dict[str, object]] = []
+
+    for name, component in config.components.items():
+        perturbed_probability = min(1.0, component.failure_probability * factor)
+        perturbed_components = dict(config.components)
+        perturbed_components[name] = replace(
+            component,
+            failure_probability=perturbed_probability,
+        )
+        perturbed_config = replace(config, components=perturbed_components)
+        result = analyze_reliability(behavior, perturbed_config)
+        system_probability = result.dtmc_solution.failure_probability
+        absolute_change = system_probability - baseline_probability
+        relative_change = (
+            system_probability / baseline_probability
+            if baseline_probability > 0.0
+            else math.inf
+        )
+        rows.append({
+            "component": name,
+            "requested_factor": factor,
+            "applied_factor": (
+                perturbed_probability / component.failure_probability
+                if component.failure_probability > 0.0
+                else 1.0
+            ),
+            "base_component_failure_probability": component.failure_probability,
+            "perturbed_component_failure_probability": perturbed_probability,
+            "baseline_system_failure_probability": baseline_probability,
+            "perturbed_system_failure_probability": system_probability,
+            "absolute_system_probability_change": absolute_change,
+            "system_probability_ratio": relative_change,
+        })
+
+    sensitivity = pd.DataFrame(rows).sort_values(
+        ["absolute_system_probability_change", "component"],
+        ascending=[False, True],
+        ignore_index=True,
+    )
+    sensitivity.insert(0, "influence_rank", range(1, len(sensitivity) + 1))
+    return sensitivity
 
 
 def _build_dtmc(segments: pd.DataFrame, skill_probabilities: pd.DataFrame) -> DTMCModel:

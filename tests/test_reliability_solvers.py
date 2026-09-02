@@ -8,6 +8,7 @@ from relaibotix.reliability import (
     bdd_probability,
     bottom_up_probability,
     load_robot_config,
+    analyze_component_sensitivity,
     analyze_reliability,
 )
 from relaibotix.behavioral.results import BehavioralResult
@@ -135,6 +136,25 @@ def test_structured_redundancy_can_define_copy_count(tmp_path):
     assert bdd_probability(tree).probability == pytest.approx(0.001)
 
 
+def test_expert_exposure_assumptions_are_loaded(tmp_path):
+    path = tmp_path / "robot.json"
+    path.write_text(
+        '{"exposure_assumptions":{'
+        '"source":"expert-review-1",'
+        '"velocity_bands":[0.2,0.7],'
+        '"velocity_multipliers":[1.0,1.5,2.0],'
+        '"effort_multipliers":[1.0,1.5,2.0],'
+        '"distance_multipliers":[1.0,1.5,2.0]},'
+        '"components":{"drive":{"failure_probability":0.1}}}'
+    )
+
+    assumptions = load_robot_config(path).exposure_assumptions
+
+    assert assumptions.source == "expert-review-1"
+    assert assumptions.velocity_bands == pytest.approx((0.2, 0.7))
+    assert assumptions.distance_multipliers == pytest.approx((1.0, 1.5, 2.0))
+
+
 def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
     behavior = BehavioralResult(
         segments=pd.DataFrame([
@@ -160,12 +180,14 @@ def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
             "effort_time_low": 2.0,
             "effort_time_medium": 0.0,
             "effort_time_high": 2.0,
+            "total_traveled_distance": 4.0,
         }]),
     )
     config_path = tmp_path / "robot.json"
     config_path.write_text(
         '{"robot":"test","robot_type":"arm","components":{'
-        '"Joint_1":{"failure_probability":0.01,"redundancy":false},'
+        '"Joint_1":{"failure_probability":0.01,"redundancy":false,'
+        '"distance_thresholds":[1.0,3.0],"distance_unit":"radian"},'
         '"Controller":{"failure_probability":0.02,"redundancy":false}}}'
     )
 
@@ -173,7 +195,10 @@ def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
     rows = result.component_failures.set_index("component")
 
     assert rows.loc["Joint_1", "base_exposure"] == pytest.approx(3.0)
-    assert rows.loc["Joint_1", "effective_exposure"] == pytest.approx(11.0)
+    assert rows.loc["Joint_1", "average_traveled_distance"] == pytest.approx(2.0)
+    assert rows.loc["Joint_1", "distance_band"] == "medium"
+    assert rows.loc["Joint_1", "distance_factor"] == pytest.approx(1.5)
+    assert rows.loc["Joint_1", "effective_exposure"] == pytest.approx(16.5)
     assert rows.loc["Controller", "effective_exposure"] == pytest.approx(10.0)
     assert result.skill_probabilities.iloc[0]["bottom_up_probability"] == pytest.approx(
         result.skill_probabilities.iloc[0]["bdd_probability"]
@@ -185,6 +210,75 @@ def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
     assert result.dtmc_solution.failure_probability == pytest.approx(
         result.skill_probabilities.iloc[0]["bdd_probability"]
     )
+
+    sensitivity = analyze_component_sensitivity(
+        behavior,
+        load_robot_config(config_path),
+        baseline=result,
+    )
+    assert sensitivity["influence_rank"].tolist() == [1, 2]
+    assert (sensitivity["requested_factor"] == 10.0).all()
+    assert (
+        sensitivity["perturbed_system_failure_probability"]
+        >= sensitivity["baseline_system_failure_probability"]
+    ).all()
+    assert sensitivity["absolute_system_probability_change"].is_monotonic_decreasing
+
+
+def test_sensitivity_factor_is_validated(tmp_path):
+    config_path = tmp_path / "robot.json"
+    config_path.write_text('{"components":{"controller":{"failure_probability":0.1}}}')
+    behavior = BehavioralResult(
+        segments=pd.DataFrame([{"episode_key": "demo_0", "skill_id": 1, "start_index": 0}]),
+        joint_metrics=pd.DataFrame(),
+        skill_summary=pd.DataFrame([{
+            "skill_id": 1,
+            "skill": "move",
+            "n_segments": 1,
+            "total_duration": 1.0,
+        }]),
+        joint_summary=pd.DataFrame(),
+    )
+
+    with pytest.raises(ValueError, match="Sensitivity factor"):
+        analyze_component_sensitivity(behavior, load_robot_config(config_path), factor=1.0)
+
+
+def test_distance_thresholds_are_validated(tmp_path):
+    path = tmp_path / "robot.json"
+    path.write_text(
+        '{"components":{"joint_1":{"failure_probability":0.1,'
+        '"distance_thresholds":[2.0,1.0]}}}'
+    )
+
+    with pytest.raises(ValueError, match="Distance thresholds"):
+        load_robot_config(path)
+
+
+def test_reliability_rejects_behavior_threshold_mismatch(tmp_path):
+    behavior = BehavioralResult(
+        segments=pd.DataFrame([{"episode_key": "demo_0", "skill_id": 1, "start_index": 0}]),
+        joint_metrics=pd.DataFrame(),
+        skill_summary=pd.DataFrame([{
+            "skill_id": 1,
+            "skill": "move",
+            "n_segments": 1,
+            "total_duration": 1.0,
+        }]),
+        joint_summary=pd.DataFrame(),
+        metadata={"behavioral_thresholds": {
+            "position_step": 0.001,
+            "velocity_active": 0.03,
+            "effort_active": 0.1,
+            "velocity_bands": [9.0, 10.0],
+            "effort_bands": [0.2, 0.6],
+        }},
+    )
+    config_path = tmp_path / "robot.json"
+    config_path.write_text('{"components":{"controller":{"failure_probability":0.1}}}')
+
+    with pytest.raises(ValueError, match="different exposure thresholds"):
+        analyze_reliability(behavior, load_robot_config(config_path))
 
 
 def test_storm_backend_parses_one_result_per_property(tmp_path, monkeypatch):

@@ -109,8 +109,9 @@ def test_analyze_h5_and_export(tmp_path):
 
     assert (csv_directory / "joint_metrics.csv").is_file()
     assert set(json.loads(json_path.read_text())) == {
-        "segments", "joint_metrics", "skill_summary", "joint_summary"
+        "segments", "joint_metrics", "skill_summary", "joint_summary", "metadata"
     }
+    assert result.metadata["behavioral_thresholds"]["velocity_bands"] == [0.5, 1.0]
 
 
 def test_analyze_grouped_detector_output_uses_filtered_labels_and_taxonomy(tmp_path):

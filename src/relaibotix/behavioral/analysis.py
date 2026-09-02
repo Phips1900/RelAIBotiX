@@ -27,6 +27,15 @@ class BehavioralThresholds:
     velocity_bands: tuple[float, float] = (0.5, 1.0)
     effort_bands: tuple[float, float] = (0.2, 0.6)
 
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "position_step": self.position_step,
+            "velocity_active": self.velocity_active,
+            "effort_active": self.effort_active,
+            "velocity_bands": list(self.velocity_bands),
+            "effort_bands": list(self.effort_bands),
+        }
+
 
 def _joint_features(feature_names: Sequence[str]) -> dict[str, dict[str, int]]:
     joints: dict[str, dict[str, int]] = {}
@@ -157,6 +166,7 @@ class BehavioralAnalyzer:
             joint_metrics=joint_metrics,
             skill_summary=self._summarize_skills(segments),
             joint_summary=self._summarize_joints(joint_metrics),
+            metadata={"behavioral_thresholds": self.thresholds.as_dict()},
         )
 
     def analyze_h5(

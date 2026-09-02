@@ -91,7 +91,9 @@ RelAIBotiX release dataset or conversion requirement.
 ## Behavioral analysis
 
 ```bash
-relaibotix behavior predicted.h5 --output artifacts/behavior
+relaibotix behavior predicted.h5 \
+  --config config_files/robots/so_arm_config.json \
+  --output artifacts/behavior
 ```
 
 By default the analysis uses filtered predictions, then raw predictions, then
@@ -124,13 +126,48 @@ model:
 - an exact reduced ordered BDD evaluator, including trees where a basic event is
   referenced by more than one gate.
 
+The velocity, effort, and distance adjustments are an expert-assumption model, not
+fixed physical constants. Each robot configuration records the thresholds,
+multipliers, and provenance used for a calculation:
+
+```json
+{
+  "exposure_assumptions": {
+    "source": "example_assumption_set_requires_expert_review",
+    "velocity_active": 0.03,
+    "effort_active": 0.1,
+    "velocity_bands": [0.5, 1.0],
+    "effort_bands": [0.2, 0.6],
+    "velocity_multipliers": [1.0, 1.5, 2.0],
+    "effort_multipliers": [1.0, 1.5, 2.0],
+    "distance_multipliers": [1.0, 1.5, 2.0]
+  }
+}
+```
+
+These example values require review by a domain expert. The behavior and reliability
+commands must use the same robot configuration; a recorded threshold mismatch is
+rejected instead of silently mixing assumption sets.
+
+For a motion component, RelAIBotiX applies the configured assumptions as:
+
+```text
+effective exposure = velocity-weighted time × effort factor × distance factor
+hazard             = base failure rate × effective exposure
+failure probability = 1 - exp(-hazard)
+```
+
+This is an explicit relative-exposure model. RelAIBotiX does not claim that the
+example thresholds or multipliers are universally valid robot parameters.
+
 Create the behavioral tables first, then build the per-skill fault trees and the
 empirical DTMC:
 
 ```bash
 relaibotix reliability artifacts/behavior/behavior.json \
   --config config_files/robots/so_arm_config.json \
-  --output artifacts/reliability
+  --output artifacts/reliability \
+  --sensitivity
 ```
 
 This writes the component exposure and failure calculations, bottom-up and BDD
@@ -139,8 +176,28 @@ The DTMC's `done` probability is reported as *completion without modeled failure
 it is not empirical task-success detection.
 Every hazard calculation retains its base probability, time basis, per-skill-execution
 active exposure, traveled distance, velocity weighting, effort factor, and final
-probability for later comparisons. Traveled distance is recorded for analysis but is
-not yet included in the time-based hazard equation.
+probability for later comparisons. Motion components can classify their mean traveled
+distance per skill occurrence into low, medium, and high bands:
+
+```json
+{
+  "distance_thresholds": [0.5, 1.0],
+  "distance_unit": "radian"
+}
+```
+
+The lower threshold starts the medium band and the upper threshold starts the high
+band. Components without configured thresholds retain a neutral distance factor of
+`1.0`. Thresholds use the physical units of the corresponding position signal and
+are never normalized against the analyzed dataset.
+
+`--sensitivity` performs the component importance analysis used by the project. It
+multiplies one component's base failure probability by ten, reruns the complete
+fault-tree and DTMC calculation, restores that component, and repeats for every
+component. The resulting `sensitivity.csv` and `sensitivity.json` rank components by
+the absolute change in overall failure probability. Pass another factor explicitly,
+for example `--sensitivity 5`, when required. Exposure measurements and all other
+component probabilities remain unchanged during each perturbation.
 
 If the `storm` executable is installed, the generated PRISM model can be verified
 with the optional STORM backend:

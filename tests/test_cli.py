@@ -1,3 +1,5 @@
+import json
+
 import h5py
 import numpy as np
 from types import SimpleNamespace
@@ -50,6 +52,11 @@ def test_h5_convert_command(tmp_path, capsys):
 def test_behavior_command(tmp_path):
     input_path = tmp_path / "labeled.h5"
     output_path = tmp_path / "behavior"
+    config_path = tmp_path / "robot.json"
+    config_path.write_text(
+        '{"exposure_assumptions":{"velocity_bands":[0.25,0.75]},'
+        '"components":{"joint_1":{"failure_probability":0.01}}}'
+    )
     with h5py.File(input_path, "w") as output:
         features = output.create_dataset(
             "features",
@@ -65,10 +72,19 @@ def test_behavior_command(tmp_path):
         skills = output.create_group("skills")
         skills.create_dataset("predicted", data=[0, 0, 1])
 
-    assert main(["behavior", str(input_path), "--output", str(output_path)]) == 0
+    assert main([
+        "behavior",
+        str(input_path),
+        "--config",
+        str(config_path),
+        "--output",
+        str(output_path),
+    ]) == 0
     assert (output_path / "segments.csv").is_file()
     assert (output_path / "joint_metrics.csv").is_file()
     assert (output_path / "behavior.json").is_file()
+    payload = json.loads((output_path / "behavior.json").read_text())
+    assert payload["metadata"]["behavioral_thresholds"]["velocity_bands"] == [0.25, 0.75]
 
 
 def test_skills_infer_command(tmp_path, monkeypatch):
@@ -120,9 +136,12 @@ def test_reliability_command(tmp_path):
         str(config_path),
         "--output",
         str(output_path),
+        "--sensitivity",
     ]) == 0
     assert (output_path / "component_failures.csv").is_file()
     assert (output_path / "skill_probabilities.csv").is_file()
     assert (output_path / "reliability.json").is_file()
     assert (output_path / "model.pm").is_file()
     assert (output_path / "model.pctl").is_file()
+    assert (output_path / "sensitivity.csv").is_file()
+    assert (output_path / "sensitivity.json").is_file()

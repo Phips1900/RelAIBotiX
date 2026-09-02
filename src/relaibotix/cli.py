@@ -79,6 +79,11 @@ def _behavior_parser() -> argparse.ArgumentParser:
     parser.add_argument("input", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
+        "--config",
+        type=Path,
+        help="Robot configuration containing expert-provided exposure assumptions.",
+    )
+    parser.add_argument(
         "--skill-labels",
         default=None,
         help=(
@@ -91,7 +96,21 @@ def _behavior_parser() -> argparse.ArgumentParser:
 
 def _run_behavior(arguments: Sequence[str]) -> int:
     args = _behavior_parser().parse_args(arguments)
-    result = BehavioralAnalyzer().analyze_h5(
+    analyzer = BehavioralAnalyzer()
+    if args.config is not None:
+        from .reliability import load_robot_config
+
+        assumptions = load_robot_config(args.config).exposure_assumptions
+        from .behavioral import BehavioralThresholds
+
+        analyzer = BehavioralAnalyzer(thresholds=BehavioralThresholds(
+            position_step=assumptions.position_step,
+            velocity_active=assumptions.velocity_active,
+            effort_active=assumptions.effort_active,
+            velocity_bands=assumptions.velocity_bands,
+            effort_bands=assumptions.effort_bands,
+        ))
+    result = analyzer.analyze_h5(
         args.input,
         skill_labels_dataset=args.skill_labels,
     )
@@ -156,6 +175,14 @@ def _reliability_parser() -> argparse.ArgumentParser:
     parser.add_argument("--storm", action="store_true", help="Verify the PRISM model with STORM")
     parser.add_argument("--storm-executable", default="storm")
     parser.add_argument("--storm-exact", action="store_true")
+    parser.add_argument(
+        "--sensitivity",
+        nargs="?",
+        type=float,
+        const=10.0,
+        metavar="FACTOR",
+        help="Perturb each component probability one at a time (default factor: 10).",
+    )
     return parser
 
 
@@ -164,14 +191,28 @@ def _run_reliability(arguments: Sequence[str]) -> int:
     from .reliability.prism import write_prism_and_props
 
     args = _reliability_parser().parse_args(arguments)
-    result = analyze_reliability(
-        BehavioralResult.read_json(args.behavior),
-        load_robot_config(args.config),
-    )
+    behavior = BehavioralResult.read_json(args.behavior)
+    config = load_robot_config(args.config)
+    result = analyze_reliability(behavior, config)
     args.output.mkdir(parents=True, exist_ok=True)
     result.component_failures.to_csv(args.output / "component_failures.csv", index=False)
     result.skill_probabilities.to_csv(args.output / "skill_probabilities.csv", index=False)
     result.write_json(args.output / "reliability.json")
+    if args.sensitivity is not None:
+        from .reliability import analyze_component_sensitivity
+
+        sensitivity = analyze_component_sensitivity(
+            behavior,
+            config,
+            factor=args.sensitivity,
+            baseline=result,
+        )
+        sensitivity.to_csv(args.output / "sensitivity.csv", index=False)
+        (args.output / "sensitivity.json").write_text(
+            sensitivity.to_json(orient="records", indent=2) + "\n"
+        )
+        if not sensitivity.empty:
+            print(f"Most influential component: {sensitivity.iloc[0]['component']}")
     prism_path, properties_path = write_prism_and_props(result.dtmc, args.output / "model")
     if args.storm:
         from .reliability import run_storm
