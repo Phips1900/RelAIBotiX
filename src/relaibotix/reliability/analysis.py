@@ -105,7 +105,7 @@ def analyze_reliability(
     """Create and solve one component fault tree for every observed skill."""
 
     factors = multipliers or ExposureMultipliers()
-    required_skill_columns = {"skill_id", "skill", "n_episodes", "total_duration"}
+    required_skill_columns = {"skill_id", "skill", "n_segments", "total_duration"}
     if not required_skill_columns.issubset(behavior.skill_summary.columns):
         missing = sorted(required_skill_columns - set(behavior.skill_summary.columns))
         raise ValueError(f"Behavior skill summary is missing columns: {missing}")
@@ -116,22 +116,28 @@ def analyze_reliability(
     for skill_row in behavior.skill_summary.itertuples(index=False):
         skill_id = int(skill_row.skill_id)
         skill = str(skill_row.skill)
-        episodes = max(1, int(skill_row.n_episodes))
-        average_duration = float(skill_row.total_duration) / episodes
+        occurrences = max(1, int(skill_row.n_segments))
+        average_duration = float(skill_row.total_duration) / occurrences
         probabilities: dict[str, float] = {}
 
         for name, component in config.components.items():
             usage = _matching_usage(behavior.joint_summary, skill_id, component.behavior_sources)
             velocity_times = tuple(
-                float(usage.get(column, pd.Series(dtype=float)).sum()) / episodes
+                float(usage.get(column, pd.Series(dtype=float)).sum()) / occurrences
                 for column in ("velocity_time_low", "velocity_time_medium", "velocity_time_high")
             )
             effort_times = tuple(
-                float(usage.get(column, pd.Series(dtype=float)).sum()) / episodes
+                float(usage.get(column, pd.Series(dtype=float)).sum()) / occurrences
                 for column in ("effort_time_low", "effort_time_medium", "effort_time_high")
             )
             average_active = (
-                float(usage.get("total_active_time", pd.Series(dtype=float)).sum()) / episodes
+                float(usage.get("total_active_time", pd.Series(dtype=float)).sum()) / occurrences
+                if not usage.empty
+                else 0.0
+            )
+            average_distance = (
+                float(usage.get("total_traveled_distance", pd.Series(dtype=float)).sum())
+                / occurrences
                 if not usage.empty
                 else 0.0
             )
@@ -168,6 +174,7 @@ def analyze_reliability(
                 "exposure_mode": component.exposure,
                 "average_skill_duration": average_duration,
                 "average_active_time": average_active,
+                "average_traveled_distance": average_distance,
                 "velocity_time_low": velocity_times[0],
                 "velocity_time_medium": velocity_times[1],
                 "velocity_time_high": velocity_times[2],

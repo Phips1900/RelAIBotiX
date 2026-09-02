@@ -104,7 +104,7 @@ def test_reliability_command(tmp_path):
     behavior_path.write_text(
         '{"segments":[{"episode_key":"demo_0","skill_id":1,"start_index":0}],'
         '"joint_metrics":[],'
-        '"skill_summary":[{"skill_id":1,"skill":"move","n_episodes":1,'
+        '"skill_summary":[{"skill_id":1,"skill":"move","n_episodes":1,"n_segments":1,'
         '"total_duration":10.0}],"joint_summary":[]}'
     )
     config_path = tmp_path / "robot.json"

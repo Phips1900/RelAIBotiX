@@ -54,7 +54,7 @@ def export_prism_from_mc(
     mc,
     *,
     model_name: str = "RelAIBotiX",
-    precision: int = 12,
+    precision: int = 16,
     include_rewards: bool = True,
 ) -> Tuple[str, Dict]:
     """
@@ -157,7 +157,7 @@ def write_prism_and_props(
     out_basename: Path | str,
     *,
     model_name: str = "RelAIBotiX",
-    precision: int = 12,
+    precision: int = 16,
 ) -> Tuple[Path, Path]:
     """Write <basename>.pm and <basename>.pctl from MarkovChain with s=0 start and requested properties."""
     out_basename = Path(out_basename)

@@ -53,29 +53,36 @@ def run_storm(
         for line in properties_file.read_text().splitlines()
         if line.strip() and not line.lstrip().startswith("//")
     )
-    command = [resolved, "--prism", str(model), "--prop", str(properties_file)]
-    if exact:
-        command.append("--exact")
-    completed = subprocess.run(
-        command,
-        text=True,
-        capture_output=True,
-        timeout=timeout,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise RuntimeError(f"STORM failed with exit code {completed.returncode}: {detail}")
-    raw_values = re.findall(
-        r"Result(?:\s+\(initial states\))?:\s*([^\r\n]+)",
-        completed.stdout,
-    )
-    try:
-        values = tuple(float(Fraction(value.strip().split()[0])) for value in raw_values)
-    except (ValueError, ZeroDivisionError) as error:
-        raise RuntimeError(f"STORM returned a non-numeric result: {raw_values}") from error
-    if len(values) != len(properties):
-        raise RuntimeError(
-            f"STORM returned {len(values)} numeric results for {len(properties)} properties."
+    values: list[float] = []
+    outputs: list[str] = []
+    for prop in properties:
+        command = [resolved, "--prism", str(model), "--prop", prop]
+        if exact:
+            command.append("--exact")
+        completed = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
         )
-    return StormResult(resolved, properties, values, completed.stdout)
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise RuntimeError(
+                f"STORM failed for property '{prop}' with exit code "
+                f"{completed.returncode}: {detail}"
+            )
+        raw_values = re.findall(
+            r"Result(?:\s+\((?:for )?initial states\))?:\s*([^\r\n]+)",
+            completed.stdout,
+        )
+        if len(raw_values) != 1:
+            raise RuntimeError(
+                f"STORM returned {len(raw_values)} numeric results for property '{prop}'."
+            )
+        try:
+            values.append(float(Fraction(raw_values[0].strip().split()[0])))
+        except (ValueError, ZeroDivisionError) as error:
+            raise RuntimeError(f"STORM returned a non-numeric result: {raw_values[0]}") from error
+        outputs.append(completed.stdout)
+    return StormResult(resolved, properties, tuple(values), "\n".join(outputs))

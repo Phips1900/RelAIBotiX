@@ -146,6 +146,7 @@ def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
             "skill_id": 1,
             "skill": "move",
             "n_episodes": 2,
+            "n_segments": 2,
             "total_duration": 20.0,
         }]),
         joint_summary=pd.DataFrame([{
@@ -191,16 +192,17 @@ def test_storm_backend_parses_one_result_per_property(tmp_path, monkeypatch):
     properties = tmp_path / "model.pctl"
     model.write_text("dtmc\n")
     properties.write_text('P=? [ F "failure" ]\nP=? [ F "done" ]\n')
-    captured = {}
+    captured = {"commands": []}
 
     monkeypatch.setattr("relaibotix.reliability.storm.shutil.which", lambda executable: "/usr/bin/storm")
 
     def fake_run(command, **options):
-        captured["command"] = command
+        captured["commands"].append(command)
         captured["options"] = options
+        value = "1/8" if len(captured["commands"]) == 1 else "7/8"
         return SimpleNamespace(
             returncode=0,
-            stdout="Result (initial states): 1/8\nResult (initial states): 7/8\n",
+            stdout=f"Result (for initial states): {value}\n",
             stderr="",
         )
 
@@ -208,7 +210,8 @@ def test_storm_backend_parses_one_result_per_property(tmp_path, monkeypatch):
     result = run_storm(model, properties, exact=True)
 
     assert result.values == (0.125, 0.875)
-    assert captured["command"] == [
-        "/usr/bin/storm", "--prism", str(model), "--prop", str(properties), "--exact"
+    assert captured["commands"] == [
+        ["/usr/bin/storm", "--prism", str(model), "--prop", 'P=? [ F "failure" ]', "--exact"],
+        ["/usr/bin/storm", "--prism", str(model), "--prop", 'P=? [ F "done" ]', "--exact"],
     ]
     assert captured["options"]["timeout"] == 120.0
