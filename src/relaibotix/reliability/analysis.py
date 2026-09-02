@@ -54,7 +54,9 @@ class ReliabilityResult:
                 "transitions": self.dtmc.transitions,
                 "absorption_probabilities": self.dtmc_solution.absorption_probabilities,
                 "failure_probability": self.dtmc_solution.failure_probability,
-                "success_probability": self.dtmc_solution.success_probability,
+                "completion_without_modeled_failure_probability": (
+                    self.dtmc_solution.completion_without_modeled_failure_probability
+                ),
                 "expected_steps": self.dtmc_solution.expected_steps,
             },
         }

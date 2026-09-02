@@ -135,6 +135,8 @@ relaibotix reliability artifacts/behavior/behavior.json \
 
 This writes the component exposure and failure calculations, bottom-up and BDD
 skill probabilities, the solved system DTMC, and `model.pm`/`model.pctl` for PRISM.
+The DTMC's `done` probability is reported as *completion without modeled failure*;
+it is not empirical task-success detection.
 Every hazard calculation retains its base probability, time basis, active exposure,
 velocity weighting, effort factor, and final probability for later comparisons.
 

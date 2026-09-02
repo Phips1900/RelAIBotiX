@@ -177,7 +177,10 @@ def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
     assert result.skill_probabilities.iloc[0]["bottom_up_probability"] == pytest.approx(
         result.skill_probabilities.iloc[0]["bdd_probability"]
     )
-    assert result.dtmc_solution.failure_probability + result.dtmc_solution.success_probability == pytest.approx(1.0)
+    assert (
+        result.dtmc_solution.failure_probability
+        + result.dtmc_solution.completion_without_modeled_failure_probability
+    ) == pytest.approx(1.0)
     assert result.dtmc_solution.failure_probability == pytest.approx(
         result.skill_probabilities.iloc[0]["bdd_probability"]
     )

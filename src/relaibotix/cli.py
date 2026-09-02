@@ -184,20 +184,23 @@ def _run_reliability(arguments: Sequence[str]) -> int:
         )
         expected = (
             result.dtmc_solution.failure_probability,
-            result.dtmc_solution.success_probability,
+            result.dtmc_solution.completion_without_modeled_failure_probability,
         )
         if len(storm_result.values) >= 2 and any(
             not math.isclose(actual, reference, rel_tol=1e-8, abs_tol=1e-12)
             for actual, reference in zip(storm_result.values[:2], expected)
         ):
             raise RuntimeError(
-                "STORM and the internal DTMC solver disagree on failure or success probability."
+                "STORM and the internal DTMC solver disagree on failure or completion probability."
             )
         storm_result.write_json(args.output / "storm.json")
         print(f"STORM verified {len(storm_result.values)} properties")
     print(f"Reliability analysis: {len(result.skill_probabilities)} skills")
     print(f"System failure probability: {result.dtmc_solution.failure_probability:.12g}")
-    print(f"System success probability: {result.dtmc_solution.success_probability:.12g}")
+    print(
+        "Completion without modeled failure: "
+        f"{result.dtmc_solution.completion_without_modeled_failure_probability:.12g}"
+    )
     print(f"Results: {args.output}")
     return 0
 

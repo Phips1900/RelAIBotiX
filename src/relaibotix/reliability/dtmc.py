@@ -77,7 +77,9 @@ class DTMCSolution:
         ))
 
     @property
-    def success_probability(self) -> float:
+    def completion_without_modeled_failure_probability(self) -> float:
+        """Probability of reaching ``done``; this is not task-success detection."""
+
         return float(self.absorption_probabilities.get("done", 0.0))
 
 
