@@ -1,47 +1,17 @@
 """Description: This file contains the solvers for the fault tree and Markov chain models."""
-import networkx as nx
 import numpy as np
-from scipy import linalg
 import re
+
+from .fault_tree import FaultTreeModel, bottom_up_probability
 
 
 def solve_ft(ft_graph, ft_object):
-    """Bottom up fault tree solver"""
-    result_map = {}
-    ft_gates = nx.get_node_attributes(ft_graph, 'gate_type')
-    ft_probs = nx.get_node_attributes(ft_graph, 'failure_prob')
-    ft_basic_events = ft_object.get_basic_events()
-    ft_top_event = ft_object.get_top_event()
-    successor_dict = nx.dfs_successors(ft_graph, ft_top_event)
-    result_map = solve_dfs(successor_dict, ft_gates, ft_basic_events, result_map)
-    for element, value in result_map.items():
-        for node in ft_probs:
-            if node == element:
-                ft_probs[node] = value
-    if ft_top_event in result_map:
-        ft_object.set_top_event_failure_prob(result_map[ft_top_event])
+    """Evaluate a fault tree bottom-up without mutating its graph."""
 
-
-def solve_dfs(successor_dict, ft_gates, ft_basic_events, result_map):
-    """Depth first search algorithm for the fault tree solver"""
-    tmp_var = 0
-    if successor_dict:
-        for node, edges in successor_dict.items():
-            for edge in edges:
-                if edge in ft_gates:
-                    if edge not in result_map:
-                        tmp_var = 100
-            if tmp_var == 100:
-                tmp_var = 0
-                continue
-            else:
-                gate_type = ft_gates[node]
-                result_map[node] = solve_ft_gate(edges, gate_type, ft_basic_events, result_map)
-                if node in successor_dict:
-                    del successor_dict[node]
-                break
-        solve_dfs(successor_dict, ft_gates, ft_basic_events, result_map)
-    return result_map
+    del ft_graph  # retained in the signature for compatibility with the old API
+    probability = bottom_up_probability(FaultTreeModel.from_legacy(ft_object))
+    ft_object.set_top_event_failure_prob(probability)
+    return probability
 
 
 def solve_ft_gate(edges, gate_type, basic_events, result_map):
@@ -88,43 +58,45 @@ def solve_mc(mc_object):
 
     # compute probability of absorption
     n_matrix = i_matrix - q_matrix
-    lu, piv = linalg.lu_factor(n_matrix)
-    b_matrix = linalg.lu_solve((lu, piv), r_matrix)
+    b_matrix = np.linalg.solve(n_matrix, r_matrix)
 
     # compute time to absorption
-    lu_1, piv_1 = linalg.lu_factor(n_matrix)
-    t_matrix = linalg.lu_solve((lu_1, piv_1), c_vector)
+    t_matrix = np.linalg.solve(n_matrix, c_vector)
 
     return b_matrix, t_matrix
 
 
 def create_mc_transition_matrix(state_list, absorbing_state_list, transitions):
     """Creates the transition matrix"""
-    state_list.extend(absorbing_state_list)
+    state_order = list(dict.fromkeys([*state_list, *absorbing_state_list]))
     if absorbing_state_list:
         print("This is an absorbing Markov chain with " + str(len(absorbing_state_list)) +
               " absorbing states.")
     else:
         print("This is not an absorbing Markov chain.")
-    p = np.zeros((len(state_list), len(state_list)))
+    p = np.zeros((len(state_order), len(state_order)))
     for first_edge, values in transitions.items():
         for second_edge, transition_prob in values.items():
-            index_first_edge = state_list.index(first_edge)
-            index_second_edge = state_list.index(second_edge)
+            index_first_edge = state_order.index(first_edge)
+            index_second_edge = state_order.index(second_edge)
             p[index_first_edge][index_second_edge] = transition_prob
+    for state in absorbing_state_list:
+        index = state_order.index(state)
+        if not p[index].any():
+            p[index, index] = 1.0
     return p
 
 
 def create_canonical_form(transition_matrix, state_list, absorbing_state_list):
     """Converts the transition matrix into the canonical form for further computations"""
-    state_list.extend(absorbing_state_list)
+    state_order = list(dict.fromkeys([*state_list, *absorbing_state_list]))
     absorbing_indices = []
     transient_indices = []
-    for state in state_list:
+    for state in state_order:
         if state in absorbing_state_list:
-            absorbing_indices.append(state_list.index(state))
+            absorbing_indices.append(state_order.index(state))
         else:
-            transient_indices.append(state_list.index(state))
+            transient_indices.append(state_order.index(state))
 
     q_matrix = np.delete(transition_matrix, absorbing_indices, axis=0)
     q_matrix = np.delete(q_matrix, absorbing_indices, axis=1)

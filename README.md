@@ -103,6 +103,31 @@ between its first and last samples.
 Outputs are written as CSV files plus `behavior.json`. Success detection and fault
 injection are intentionally outside this release pipeline.
 
+## Reliability foundation
+
+Robot configurations in `config_files/robots` define component failure
+probabilities and redundancy. Existing Boolean redundancy values remain supported:
+`true` means two identical copies whose combined loss is an AND event. New configs
+can state the copy count explicitly:
+
+```json
+{
+  "failure_probability": 1e-6,
+  "redundancy": {"copies": 3}
+}
+```
+
+The reliability package provides two fault-tree evaluators over the same validated
+model:
+
+- a traditional bottom-up evaluator for ordinary trees;
+- an exact reduced ordered BDD evaluator, including trees where a basic event is
+  referenced by more than one gate.
+
+PRISM export remains available. Connecting behavioral exposure to the shared
+fault-tree/DTMC model and adding the STORM execution backend are the next migration
+steps.
+
 ## Current case-study scope
 
 The HDF5 and analysis interfaces are robot-independent. Existing pretrained

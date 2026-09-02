@@ -8,7 +8,7 @@ import networkx as nx
 def create_mc_graph(mc_object):
     """@brief creates a MC graph"""
     mc_graph = nx.DiGraph()
-    mc_states = mc_object.get_states()
+    mc_states = list(mc_object.get_states())
     mc_states.extend(mc_object.get_absorbing_states())
     mc_graph.add_nodes_from(mc_states)
     # mc_edges = mc_object.get_edges()
@@ -34,6 +34,5 @@ def create_ft_graph(ft_object):
             for basic_event in be:
                 ft_graph.add_edge(element, basic_event)
     return ft_graph
-
 
 

@@ -1079,33 +1079,24 @@ class FaultTree:
           P(OR(children))  = 1 - ∏ (1 - p(child))
         Children may be basic events or sub-gates (recursively).
         """
-        self.validate()
+        from .fault_tree import FaultTreeModel, bottom_up_probability
 
-        def p_node(node: str) -> float:
-            # leaf
-            if node in self.basic_events:
-                return float(self.basic_events[node])
-            # gate
-            gate = self.gates.get(node, {})
-            if "AND" in gate:
-                vals = [p_node(c) for c in gate["AND"]]
-                out = 1.0
-                for v in vals:
-                    out *= float(v)
-                return out
-            if "OR" in gate:
-                vals = [p_node(c) for c in gate["OR"]]
-                prod = 1.0
-                for v in vals:
-                    prod *= (1.0 - float(v))
-                return 1.0 - prod
-            # unreachable if validate() passed
-            return 0.0
-
-        p_top = p_node(self.top_event)
+        p_top = bottom_up_probability(FaultTreeModel.from_legacy(self))
         if set_cache:
             self.top_event_failure_prob = float(p_top)
         return float(p_top)
+
+    def evaluate_bdd(self, *, variable_order: Iterable[str] | None = None):
+        """Evaluate exactly with a reduced ordered binary decision diagram."""
+
+        from .fault_tree import FaultTreeModel, bdd_probability
+
+        result = bdd_probability(
+            FaultTreeModel.from_legacy(self),
+            variable_order=variable_order,
+        )
+        self.top_event_failure_prob = result.probability
+        return result
 
     # ------------------- export helpers -------------------
 

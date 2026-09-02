@@ -1,7 +1,6 @@
 networkx
 jsonpickle
 fpdf
-scipy
 torch~=2.5.1
 transformers
 scikit-learn~=1.6.1
