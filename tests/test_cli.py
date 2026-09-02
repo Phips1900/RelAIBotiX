@@ -29,7 +29,7 @@ def test_h5_validate_command(tmp_path, capsys):
 def test_no_arguments_shows_new_cli_help(capsys):
     assert main([]) == 0
     output = capsys.readouterr().out
-    assert "{h5,skills,behavior}" in output
+    assert "{h5,skills,behavior,reliability}" in output
     assert "--ckpt" not in output
 
 
@@ -96,3 +96,33 @@ def test_skills_infer_command(tmp_path, monkeypatch):
     ]) == 0
     assert captured["h5_path"] == input_path
     assert captured["output_h5"] == output_path
+
+
+def test_reliability_command(tmp_path):
+    behavior_path = tmp_path / "behavior.json"
+    output_path = tmp_path / "reliability"
+    behavior_path.write_text(
+        '{"segments":[{"episode_key":"demo_0","skill_id":1,"start_index":0}],'
+        '"joint_metrics":[],'
+        '"skill_summary":[{"skill_id":1,"skill":"move","n_episodes":1,'
+        '"total_duration":10.0}],"joint_summary":[]}'
+    )
+    config_path = tmp_path / "robot.json"
+    config_path.write_text(
+        '{"robot":"test","robot_type":"mobile","components":{'
+        '"Controller":{"failure_probability":0.01,"redundancy":false}}}'
+    )
+
+    assert main([
+        "reliability",
+        str(behavior_path),
+        "--config",
+        str(config_path),
+        "--output",
+        str(output_path),
+    ]) == 0
+    assert (output_path / "component_failures.csv").is_file()
+    assert (output_path / "skill_probabilities.csv").is_file()
+    assert (output_path / "reliability.json").is_file()
+    assert (output_path / "model.pm").is_file()
+    assert (output_path / "model.pctl").is_file()

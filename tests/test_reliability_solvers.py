@@ -8,9 +8,14 @@ from relaibotix.reliability import (
     bdd_probability,
     bottom_up_probability,
     load_robot_config,
+    analyze_reliability,
 )
+from relaibotix.behavioral.results import BehavioralResult
+import pandas as pd
 from relaibotix.reliability.solver import create_mc_transition_matrix, solve_mc
 from relaibotix.reliability.graph import create_mc_graph
+from relaibotix.reliability.storm import run_storm
+from types import SimpleNamespace
 
 
 def test_bottom_up_and_bdd_agree_for_a_tree():
@@ -128,3 +133,79 @@ def test_structured_redundancy_can_define_copy_count(tmp_path):
     assert config.redundant_components == {"drive": 3}
     assert tree.gates["loss_of_drive"].children == ("drive_1", "drive_2", "drive_3")
     assert bdd_probability(tree).probability == pytest.approx(0.001)
+
+
+def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
+    behavior = BehavioralResult(
+        segments=pd.DataFrame([
+            {"episode_key": "demo_0", "skill_id": 1, "start_index": 0},
+            {"episode_key": "demo_1", "skill_id": 1, "start_index": 1},
+        ]),
+        joint_metrics=pd.DataFrame(),
+        skill_summary=pd.DataFrame([{
+            "skill_id": 1,
+            "skill": "move",
+            "n_episodes": 2,
+            "total_duration": 20.0,
+        }]),
+        joint_summary=pd.DataFrame([{
+            "skill_id": 1,
+            "skill": "move",
+            "joint": "j1",
+            "total_active_time": 8.0,
+            "velocity_time_low": 2.0,
+            "velocity_time_medium": 2.0,
+            "velocity_time_high": 2.0,
+            "effort_time_low": 2.0,
+            "effort_time_medium": 0.0,
+            "effort_time_high": 2.0,
+        }]),
+    )
+    config_path = tmp_path / "robot.json"
+    config_path.write_text(
+        '{"robot":"test","robot_type":"arm","components":{'
+        '"Joint_1":{"failure_probability":0.01,"redundancy":false},'
+        '"Controller":{"failure_probability":0.02,"redundancy":false}}}'
+    )
+
+    result = analyze_reliability(behavior, load_robot_config(config_path))
+    rows = result.component_failures.set_index("component")
+
+    assert rows.loc["Joint_1", "base_exposure"] == pytest.approx(3.0)
+    assert rows.loc["Joint_1", "effective_exposure"] == pytest.approx(11.0)
+    assert rows.loc["Controller", "effective_exposure"] == pytest.approx(10.0)
+    assert result.skill_probabilities.iloc[0]["bottom_up_probability"] == pytest.approx(
+        result.skill_probabilities.iloc[0]["bdd_probability"]
+    )
+    assert result.dtmc_solution.failure_probability + result.dtmc_solution.success_probability == pytest.approx(1.0)
+    assert result.dtmc_solution.failure_probability == pytest.approx(
+        result.skill_probabilities.iloc[0]["bdd_probability"]
+    )
+
+
+def test_storm_backend_parses_one_result_per_property(tmp_path, monkeypatch):
+    model = tmp_path / "model.pm"
+    properties = tmp_path / "model.pctl"
+    model.write_text("dtmc\n")
+    properties.write_text('P=? [ F "failure" ]\nP=? [ F "done" ]\n')
+    captured = {}
+
+    monkeypatch.setattr("relaibotix.reliability.storm.shutil.which", lambda executable: "/usr/bin/storm")
+
+    def fake_run(command, **options):
+        captured["command"] = command
+        captured["options"] = options
+        return SimpleNamespace(
+            returncode=0,
+            stdout="Result (initial states): 1/8\nResult (initial states): 7/8\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("relaibotix.reliability.storm.subprocess.run", fake_run)
+    result = run_storm(model, properties, exact=True)
+
+    assert result.values == (0.125, 0.875)
+    assert captured["command"] == [
+        "/usr/bin/storm", "--prism", str(model), "--prop", str(properties), "--exact"
+    ]
+    assert captured["options"]["timeout"] == 120.0

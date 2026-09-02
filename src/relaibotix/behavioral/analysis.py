@@ -40,6 +40,13 @@ def _joint_features(feature_names: Sequence[str]) -> dict[str, dict[str, int]]:
         joint = f"j{int(identifier)}" if identifier.isdigit() else identifier
         joints.setdefault(joint, {})[signal] = index
 
+    for index, feature_name in enumerate(feature_names):
+        signal = str(feature_name).lower()
+        if signal == "gripper_state":
+            joints.setdefault("gripper", {})["pos"] = index
+        elif signal in {"gripper_effort", "gripper_torque"}:
+            joints.setdefault("gripper", {})["effort"] = index
+
     actuator_pattern = re.compile(r"^actuator_(?:force|effort|torque)_(.+)$", re.IGNORECASE)
     for index, feature_name in enumerate(feature_names):
         match = actuator_pattern.match(str(feature_name))
@@ -172,7 +179,11 @@ class BehavioralAnalyzer:
                 ),
                 "skills/predicted",
             )
-            required = ("features", "timestamps", "episode_ids", label_path)
+            episode_path = next(
+                (name for name in ("episode_ids", "episodes", "labels") if name in source),
+                "episode_ids",
+            )
+            required = ("features", "timestamps", episode_path, label_path)
             missing = [name for name in required if name not in source]
             if missing:
                 raise ValueError(f"HDF5 input is missing required datasets: {', '.join(missing)}")
@@ -182,7 +193,7 @@ class BehavioralAnalyzer:
                 feature_names=decode_feature_names(feature_dataset),
                 skill_labels=source[label_path][:],
                 timestamps=source["timestamps"][:],
-                episode_ids=source["episode_ids"][:],
+                episode_ids=source[episode_path][:],
             )
 
     def _analyze_grouped_h5(

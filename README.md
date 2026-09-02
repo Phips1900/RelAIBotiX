@@ -124,9 +124,33 @@ model:
 - an exact reduced ordered BDD evaluator, including trees where a basic event is
   referenced by more than one gate.
 
-PRISM export remains available. Connecting behavioral exposure to the shared
-fault-tree/DTMC model and adding the STORM execution backend are the next migration
-steps.
+Create the behavioral tables first, then build the per-skill fault trees and the
+empirical DTMC:
+
+```bash
+relaibotix reliability artifacts/behavior/behavior.json \
+  --config config_files/robots/so_arm_config.json \
+  --output artifacts/reliability
+```
+
+This writes the component exposure and failure calculations, bottom-up and BDD
+skill probabilities, the solved system DTMC, and `model.pm`/`model.pctl` for PRISM.
+Every hazard calculation retains its base probability, time basis, active exposure,
+velocity weighting, effort factor, and final probability for later comparisons.
+
+If the `storm` executable is installed, the generated PRISM model can be verified
+with the optional STORM backend:
+
+```bash
+relaibotix reliability artifacts/behavior/behavior.json \
+  --config config_files/robots/so_arm_config.json \
+  --output artifacts/reliability \
+  --storm
+```
+
+Use `--storm-exact` for STORM's exact mode or `--storm-executable` when the binary
+is not on the normal executable path. PRISM remains a first-class exported backend;
+STORM consumes the same `.pm` and `.pctl` files.
 
 ## Current case-study scope
 

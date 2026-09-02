@@ -1,4 +1,6 @@
 {
+  "schema_version": "1.0",
+  "failure_probability_basis": "per_minute",
   "robot": "Franka Emika Panda",
   "robot_type": "Manipulator",
   "components": {

@@ -47,3 +47,14 @@ class BehavioralResult:
         with destination.open("w", encoding="utf-8") as output:
             json.dump(payload, output, indent=2)
         return destination
+
+    @classmethod
+    def read_json(cls, input_path: str | Path) -> "BehavioralResult":
+        """Load a behavioral result previously written by :meth:`write_json`."""
+
+        payload = json.loads(Path(input_path).read_text())
+        required = ("segments", "joint_metrics", "skill_summary", "joint_summary")
+        missing = [name for name in required if name not in payload]
+        if missing:
+            raise ValueError(f"Behavior JSON is missing tables: {', '.join(missing)}")
+        return cls(**{name: pd.DataFrame(payload[name]) for name in required})

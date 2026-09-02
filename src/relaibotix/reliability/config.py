@@ -16,12 +16,16 @@ class ComponentConfig:
     name: str
     failure_probability: float
     redundancy_copies: int = 1
+    behavior_sources: tuple[str, ...] = ()
+    exposure: str = "skill_time"
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.failure_probability <= 1.0:
             raise ValueError(f"Failure probability for '{self.name}' must lie in [0, 1].")
         if self.redundancy_copies < 1:
             raise ValueError(f"Redundancy copies for '{self.name}' must be at least one.")
+        if self.exposure not in {"motion", "skill_time"}:
+            raise ValueError(f"Exposure for '{self.name}' must be 'motion' or 'skill_time'.")
 
 
 @dataclass(frozen=True)
@@ -109,10 +113,21 @@ def load_robot_config(path: str | Path) -> RobotConfig:
     for name, definition in raw_components.items():
         if not isinstance(definition, dict) or "failure_probability" not in definition:
             raise ValueError(f"Component '{name}' requires a failure_probability.")
+        normalized = str(name).lower()
+        joint_match = re.fullmatch(r"joint[_ -]?(\d+)", normalized)
+        inferred_sources = (f"j{joint_match.group(1)}",) if joint_match else ()
+        if normalized == "gripper":
+            inferred_sources = ("gripper",)
+        raw_sources = definition.get("behavior_sources", inferred_sources)
+        if isinstance(raw_sources, str):
+            raw_sources = [raw_sources]
+        exposure = definition.get("exposure", "motion" if raw_sources else "skill_time")
         components[str(name)] = ComponentConfig(
             name=str(name),
             failure_probability=float(definition["failure_probability"]),
             redundancy_copies=_redundancy_copies(definition.get("redundancy"), str(name)),
+            behavior_sources=tuple(map(str, raw_sources)),
+            exposure=str(exposure),
         )
     return RobotConfig(
         name=str(raw.get("robot", config_path.stem)),

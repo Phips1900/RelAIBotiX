@@ -1,4 +1,6 @@
 {
+  "schema_version": "1.0",
+  "failure_probability_basis": "per_minute",
   "robot": "Yaskawa GP7",
   "robot_type": "Manipulator",
   "components": {
