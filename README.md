@@ -106,7 +106,10 @@ By default the analysis uses filtered predictions, then raw predictions, then
 ground-truth skill labels. It reports per-segment and aggregate duration, velocity,
 effort/torque, and joint traveled distance. Traveled distance is the sum of the
 absolute position changes within a skill segment, rather than only the difference
-between its first and last samples.
+between its first and last samples. Mobile recordings additionally produce separate
+`base_metrics` and `base_summary` tables containing planar path length, wrapped yaw
+travel, linear speed, and angular speed. These platform metrics are not treated as
+an additional fault-tree component.
 
 Outputs are written as CSV files plus `behavior.json`. Success detection and fault
 injection are intentionally outside this release pipeline.

@@ -100,6 +100,22 @@ def _configured_features(
     return resolved
 
 
+def _mobile_base_features(feature_names: Sequence[str]) -> dict[str, int]:
+    indices = {str(name): index for index, name in enumerate(feature_names)}
+    return {
+        signal: indices[name]
+        for signal, name in {
+            "x": "base_x_m",
+            "y": "base_y_m",
+            "yaw": "base_yaw_rad",
+            "vx": "base_vx_m_s",
+            "vy": "base_vy_m_s",
+            "wz": "base_wz_rad_s",
+        }.items()
+        if name in indices
+    }
+
+
 def _finite_stat(values: np.ndarray, operation) -> float:
     finite = values[np.isfinite(values)]
     return float(operation(finite)) if finite.size else float("nan")
@@ -169,9 +185,11 @@ class BehavioralAnalyzer:
         )
         if not joints:
             raise ValueError("No joint position, velocity, or effort features were found.")
+        base_columns = _mobile_base_features(feature_names)
 
         segment_rows: list[dict[str, object]] = []
         joint_rows: list[dict[str, object]] = []
+        base_rows: list[dict[str, object]] = []
         for segment_index, (start, end) in enumerate(self._segments(labels, episodes)):
             episode_id = int(episodes[start])
             skill_id = int(labels[start])
@@ -196,14 +214,23 @@ class BehavioralAnalyzer:
                 joint_rows.append(
                     self._joint_metrics(values[start : end + 1], segment_times, columns, joint, segment)
                 )
+            if base_columns:
+                base_rows.append(
+                    self._base_metrics(
+                        values[start : end + 1], segment_times, base_columns, segment
+                    )
+                )
 
         segments = pd.DataFrame(segment_rows)
         joint_metrics = pd.DataFrame(joint_rows)
+        base_metrics = pd.DataFrame(base_rows)
         return BehavioralResult(
             segments=segments,
             joint_metrics=joint_metrics,
             skill_summary=self._summarize_skills(segments),
             joint_summary=self._summarize_joints(joint_metrics),
+            base_metrics=base_metrics,
+            base_summary=self._summarize_base(base_metrics),
             metadata={
                 "behavioral_thresholds": self.thresholds.as_dict(),
                 "measurement_mapping": (
@@ -211,6 +238,65 @@ class BehavioralAnalyzer:
                 ),
             },
         )
+
+    @staticmethod
+    def _base_metrics(
+        features: np.ndarray,
+        timestamps: np.ndarray,
+        columns: Mapping[str, int],
+        segment: Mapping[str, object],
+    ) -> dict[str, object]:
+        dt = np.diff(timestamps)
+        if np.any(dt < 0.0):
+            raise ValueError(f"Timestamps decrease inside episode {segment['episode_id']}.")
+
+        translation_distance = float("nan")
+        if "x" in columns and "y" in columns:
+            dx = np.diff(features[:, columns["x"]])
+            dy = np.diff(features[:, columns["y"]])
+            valid = np.isfinite(dx) & np.isfinite(dy)
+            translation_distance = float(np.sum(np.hypot(dx[valid], dy[valid])))
+
+        rotation_distance = float("nan")
+        if "yaw" in columns:
+            delta_yaw = np.diff(features[:, columns["yaw"]])
+            wrapped = np.arctan2(np.sin(delta_yaw), np.cos(delta_yaw))
+            rotation_distance = float(np.sum(np.abs(wrapped[np.isfinite(wrapped)])))
+
+        linear_speed = None
+        if "vx" in columns and "vy" in columns:
+            linear_speed = np.hypot(
+                features[:, columns["vx"]], features[:, columns["vy"]]
+            )
+        angular_speed = (
+            np.abs(features[:, columns["wz"]]) if "wz" in columns else None
+        )
+        return {
+            "episode_id": segment["episode_id"],
+            "episode_key": segment["episode_key"],
+            "segment_index": segment["segment_index"],
+            "skill_id": segment["skill_id"],
+            "skill": segment["skill"],
+            "duration": segment["duration"],
+            "translation_distance_m": translation_distance,
+            "rotation_distance_rad": rotation_distance,
+            "mean_linear_speed_m_s": (
+                _finite_stat(linear_speed, np.mean)
+                if linear_speed is not None else float("nan")
+            ),
+            "max_linear_speed_m_s": (
+                _finite_stat(linear_speed, np.max)
+                if linear_speed is not None else float("nan")
+            ),
+            "mean_angular_speed_rad_s": (
+                _finite_stat(angular_speed, np.mean)
+                if angular_speed is not None else float("nan")
+            ),
+            "max_angular_speed_rad_s": (
+                _finite_stat(angular_speed, np.max)
+                if angular_speed is not None else float("nan")
+            ),
+        }
 
     def analyze_h5(
         self,
@@ -488,5 +574,22 @@ class BehavioralAnalyzer:
                 effort_time_low=("effort_time_low", "sum"),
                 effort_time_medium=("effort_time_medium", "sum"),
                 effort_time_high=("effort_time_high", "sum"),
+            )
+        )
+
+    @staticmethod
+    def _summarize_base(metrics: pd.DataFrame) -> pd.DataFrame:
+        if metrics.empty:
+            return pd.DataFrame()
+        return (
+            metrics.groupby(["skill_id", "skill"], as_index=False)
+            .agg(
+                n_segments=("segment_index", "count"),
+                total_translation_distance_m=("translation_distance_m", "sum"),
+                mean_translation_distance_m=("translation_distance_m", "mean"),
+                total_rotation_distance_rad=("rotation_distance_rad", "sum"),
+                mean_rotation_distance_rad=("rotation_distance_rad", "mean"),
+                max_linear_speed_m_s=("max_linear_speed_m_s", "max"),
+                max_angular_speed_rad_s=("max_angular_speed_rad_s", "max"),
             )
         )

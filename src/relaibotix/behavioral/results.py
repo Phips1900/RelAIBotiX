@@ -18,6 +18,8 @@ class BehavioralResult:
     joint_metrics: pd.DataFrame
     skill_summary: pd.DataFrame
     joint_summary: pd.DataFrame
+    base_metrics: pd.DataFrame = field(default_factory=pd.DataFrame)
+    base_summary: pd.DataFrame = field(default_factory=pd.DataFrame)
     metadata: dict[str, object] = field(default_factory=dict)
 
     def tables(self) -> dict[str, pd.DataFrame]:
@@ -26,6 +28,8 @@ class BehavioralResult:
             "joint_metrics": self.joint_metrics,
             "skill_summary": self.skill_summary,
             "joint_summary": self.joint_summary,
+            "base_metrics": self.base_metrics,
+            "base_summary": self.base_summary,
         }
 
     def write_csv(self, output_directory: str | Path) -> Path:
@@ -62,5 +66,7 @@ class BehavioralResult:
             raise ValueError(f"Behavior JSON is missing tables: {', '.join(missing)}")
         return cls(
             **{name: pd.DataFrame(payload[name]) for name in required},
+            base_metrics=pd.DataFrame(payload.get("base_metrics", [])),
+            base_summary=pd.DataFrame(payload.get("base_summary", [])),
             metadata=dict(payload.get("metadata", {})),
         )

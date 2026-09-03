@@ -109,6 +109,35 @@ def test_configured_multi_axis_component_counts_time_once():
     assert head["active_time"] == pytest.approx(2.0)
 
 
+def test_mobile_base_reports_translation_and_wrapped_rotation():
+    features = np.array([
+        [0.0, 0.0, 3.0, 0.3, 0.4, 0.2, 0.0],
+        [3.0, 4.0, -3.0, 0.3, 0.4, -0.2, 0.5],
+        [3.0, 8.0, -2.5, 0.0, 0.0, 0.5, 1.0],
+    ])
+    names = [
+        "base_x_m", "base_y_m", "base_yaw_rad",
+        "base_vx_m_s", "base_vy_m_s", "base_wz_rad_s",
+        "joint_pos_1",
+    ]
+    result = BehavioralAnalyzer().analyze(
+        features=features,
+        feature_names=names,
+        skill_labels=np.array([1, 1, 1]),
+        timestamps=np.array([0.0, 1.0, 2.0]),
+        episode_ids=np.array([0, 0, 0]),
+    )
+
+    base = result.base_metrics.iloc[0]
+    assert base["translation_distance_m"] == pytest.approx(9.0)
+    assert base["rotation_distance_rad"] == pytest.approx(
+        abs(np.arctan2(np.sin(-6.0), np.cos(-6.0))) + 0.5
+    )
+    assert base["max_linear_speed_m_s"] == pytest.approx(0.5)
+    assert base["max_angular_speed_rad_s"] == pytest.approx(0.5)
+    assert result.base_summary.iloc[0]["total_translation_distance_m"] == pytest.approx(9.0)
+
+
 def test_analysis_requires_detector_labels():
     features, labels, timestamps, episodes = sample_data()
     labels[0] = -1
@@ -139,7 +168,8 @@ def test_analyze_h5_and_export(tmp_path):
 
     assert (csv_directory / "joint_metrics.csv").is_file()
     assert set(json.loads(json_path.read_text())) == {
-        "segments", "joint_metrics", "skill_summary", "joint_summary", "metadata"
+        "segments", "joint_metrics", "skill_summary", "joint_summary",
+        "base_metrics", "base_summary", "metadata"
     }
     assert result.metadata["behavioral_thresholds"]["velocity_bands"] == [0.5, 1.0]
 
