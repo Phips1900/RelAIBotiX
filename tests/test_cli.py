@@ -1,4 +1,6 @@
 import json
+from pathlib import Path
+import shutil
 
 import h5py
 import numpy as np
@@ -55,6 +57,20 @@ def _write_valid_input(path):
         h5_file.create_dataset("labels", data=np.asarray([0, 0, 1, 1]))
 
 
+def _write_canonical_input(path):
+    with h5py.File(path, "w") as h5_file:
+        data = h5_file.create_group("data")
+        episode = data.create_group("demo_000000")
+        features = episode.create_dataset(
+            "features",
+            data=np.array([[0.0, 0.0], [0.5, 0.5], [1.0, 0.5]]),
+        )
+        features.attrs["feature_names"] = ["joint_pos_1", "joint_vel_1"]
+        episode.create_dataset("timestamps/sim", data=[0.0, 0.5, 1.0])
+        episode.create_dataset("episode/index", data=[0, 0, 0])
+        episode.create_dataset("labels/skill_id", data=[-1, -1, -1])
+
+
 def test_h5_validate_command(tmp_path, capsys):
     path = tmp_path / "input.h5"
     _write_valid_input(path)
@@ -86,7 +102,7 @@ def test_h5_validate_checks_robot_config_features(tmp_path, capsys):
 def test_no_arguments_shows_new_cli_help(capsys):
     assert main([]) == 0
     output = capsys.readouterr().out
-    assert "{h5,config,skills,behavior,reliability}" in output
+    assert "{h5,config,skills,behavior,reliability,run}" in output
     assert "--ckpt" not in output
 
 
@@ -179,6 +195,49 @@ def test_skills_list_command(capsys):
     output = capsys.readouterr().out
     assert "mobile-lstm: mobile, timeseries [recommended]" in output
     assert "franka-sim-lstm: franka_sim, timeseries [recommended]" in output
+
+
+def test_run_command_executes_complete_pipeline(tmp_path, monkeypatch):
+    import relaibotix.cli as cli
+
+    input_path = tmp_path / "input.h5"
+    config_path = tmp_path / "robot.json"
+    output_path = tmp_path / "run"
+    checkpoint = tmp_path / "model.pt"
+    _write_canonical_input(input_path)
+    _write_robot_config(config_path)
+    checkpoint.write_bytes(b"checkpoint")
+
+    def fake_skills(arguments):
+        source = Path(arguments[1])
+        destination = Path(arguments[arguments.index("--output") + 1])
+        shutil.copy2(source, destination)
+        with h5py.File(destination, "r+") as output:
+            labels = output["data/demo_000000/labels"]
+            labels.create_dataset("predicted_skill_id", data=[1, 1, 1])
+            labels.create_dataset("filtered_skill_id", data=[1, 1, 1])
+        return 0
+
+    monkeypatch.setattr(cli, "_run_skills", fake_skills)
+    assert main([
+        "run",
+        str(input_path),
+        "--config",
+        str(config_path),
+        "--checkpoint",
+        str(checkpoint),
+        "--output",
+        str(output_path),
+        "--device",
+        "cpu",
+        "--sensitivity",
+    ]) == 0
+
+    assert (output_path / "predicted.h5").is_file()
+    assert (output_path / "behavior" / "behavior.json").is_file()
+    assert (output_path / "reliability" / "reliability.json").is_file()
+    assert (output_path / "reliability" / "model.pm").is_file()
+    assert (output_path / "reliability" / "sensitivity.csv").is_file()
 
 
 def test_reliability_command(tmp_path):

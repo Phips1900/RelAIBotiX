@@ -9,8 +9,8 @@ This release branch is being reorganized around one portable workflow:
 3. calculate behavioral metrics;
 4. build reliability models with the DTMC, fault-tree, PRISM, BDD, and STORM backends.
 
-The first three stages are available through the new command-line interface. The
-reliability backends are currently being migrated from the legacy research code.
+All stages are available through the command-line interface, either independently
+or as one reproducible run.
 
 ## Installation
 
@@ -62,6 +62,25 @@ relaibotix h5 convert legacy.h5 canonical.h5
 ```
 
 Neither validation nor conversion changes the source file.
+
+## Complete pipeline
+
+Run validation, optional flat-to-canonical conversion, mandatory skill inference,
+behavioral analysis, fault trees, BDD, DTMC, PRISM export, and sensitivity analysis
+with one command:
+
+```bash
+relaibotix run recording.h5 \
+  --config configs/robots/hello_stretch.json \
+  --checkpoint-root /path/to/detector/outputs \
+  --output artifacts/mobile_act \
+  --sensitivity
+```
+
+Add `--storm` to verify the generated PRISM model with STORM. The output directory
+contains `predicted.h5`, the behavioral tables, reliability tables, sensitivity
+results, and the PRISM model/property files. Existing prediction outputs are never
+overwritten.
 
 ## Skill inference
 

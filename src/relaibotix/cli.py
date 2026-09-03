@@ -346,6 +346,121 @@ def _run_reliability(arguments: Sequence[str]) -> int:
     return 0
 
 
+def _pipeline_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="relaibotix run",
+        description="Run the complete RelAIBotiX analysis pipeline from one HDF5 input.",
+    )
+    parser.add_argument("input", type=Path)
+    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--checkpoint", type=Path)
+    selection.add_argument("--detector")
+    parser.add_argument("--case-study")
+    parser.add_argument("--registry", type=Path)
+    parser.add_argument("--checkpoint-root", type=Path)
+    parser.add_argument(
+        "--modality",
+        choices=("auto", "timeseries", "camera", "hybrid"),
+        default="auto",
+    )
+    parser.add_argument("--lerobot-root", type=Path)
+    parser.add_argument("--batch-size", type=int, default=512)
+    parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
+    parser.add_argument("--minimum-skill-frames", type=int, default=5)
+    parser.add_argument("--target-stride", type=int, default=1)
+    parser.add_argument(
+        "--sensitivity",
+        nargs="?",
+        type=float,
+        const=10.0,
+        metavar="FACTOR",
+    )
+    parser.add_argument("--storm", action="store_true")
+    parser.add_argument("--storm-executable", default="storm")
+    parser.add_argument("--storm-exact", action="store_true")
+    return parser
+
+
+def _run_pipeline(arguments: Sequence[str]) -> int:
+    args = _pipeline_parser().parse_args(arguments)
+    if not _print_validation(args.input, args.config):
+        return 1
+
+    args.output.mkdir(parents=True, exist_ok=True)
+    source = args.input
+    if inspect_h5(source).layout == "flat":
+        source = args.output / "canonical.h5"
+        if source.exists():
+            raise FileExistsError(f"Pipeline output already exists: {source}")
+        convert_h5(args.input, source)
+        print(f"Canonical input: {source}")
+
+    predicted = args.output / "predicted.h5"
+    if predicted.exists():
+        raise FileExistsError(f"Pipeline output already exists: {predicted}")
+    skill_arguments = [
+        "infer",
+        str(source),
+        "--output",
+        str(predicted),
+        "--modality",
+        args.modality,
+        "--batch-size",
+        str(args.batch_size),
+        "--num-workers",
+        str(args.num_workers),
+        "--device",
+        args.device,
+        "--minimum-skill-frames",
+        str(args.minimum_skill_frames),
+        "--target-stride",
+        str(args.target_stride),
+    ]
+    for option, value in (
+        ("--checkpoint", args.checkpoint),
+        ("--detector", args.detector),
+        ("--case-study", args.case_study),
+        ("--registry", args.registry),
+        ("--checkpoint-root", args.checkpoint_root),
+        ("--lerobot-root", args.lerobot_root),
+    ):
+        if value is not None:
+            skill_arguments.extend((option, str(value)))
+    _run_skills(skill_arguments)
+
+    if not _print_validation(predicted, args.config):
+        raise RuntimeError("Detector output failed HDF5 validation.")
+
+    behavior_directory = args.output / "behavior"
+    _run_behavior([
+        str(predicted),
+        "--config",
+        str(args.config),
+        "--output",
+        str(behavior_directory),
+    ])
+
+    reliability_arguments = [
+        str(behavior_directory / "behavior.json"),
+        "--config",
+        str(args.config),
+        "--output",
+        str(args.output / "reliability"),
+    ]
+    if args.sensitivity is not None:
+        reliability_arguments.extend(("--sensitivity", str(args.sensitivity)))
+    if args.storm:
+        reliability_arguments.extend(("--storm", "--storm-executable", args.storm_executable))
+        if args.storm_exact:
+            reliability_arguments.append("--storm-exact")
+    _run_reliability(reliability_arguments)
+    print(f"Pipeline complete: {args.output}")
+    return 0
+
+
 def _top_level_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="relaibotix",
@@ -354,7 +469,7 @@ def _top_level_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=("h5", "config", "skills", "behavior", "reliability"),
+        choices=("h5", "config", "skills", "behavior", "reliability", "run"),
     )
     return parser
 
@@ -374,5 +489,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_skills(arguments[1:])
     if arguments and arguments[0] == "reliability":
         return _run_reliability(arguments[1:])
+    if arguments and arguments[0] == "run":
+        return _run_pipeline(arguments[1:])
     _top_level_parser().parse_args(arguments)
     return 0

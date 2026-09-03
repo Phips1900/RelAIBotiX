@@ -92,6 +92,3 @@ datasets/
 /src/relaibotix/skilldetector/datasets/panda_D_train.h5
 /src/relaibotix/skilldetector/tb_logs/panda_X/version_0/hparams.yaml
 /datasets/data.h5
-/src/relaibotix/combine_h5.py
-/src/relaibotix/data_h5.py
-/src/relaibotix/h5_helper.py
