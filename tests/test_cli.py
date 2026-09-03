@@ -174,6 +174,13 @@ def test_skills_infer_command(tmp_path, monkeypatch):
     assert captured["output_h5"] == output_path
 
 
+def test_skills_list_command(capsys):
+    assert main(["skills", "list"]) == 0
+    output = capsys.readouterr().out
+    assert "mobile-lstm: mobile, timeseries [recommended]" in output
+    assert "franka-sim-lstm: franka_sim, timeseries [recommended]" in output
+
+
 def test_reliability_command(tmp_path):
     behavior_path = tmp_path / "behavior.json"
     output_path = tmp_path / "reliability"

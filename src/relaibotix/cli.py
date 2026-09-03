@@ -170,9 +170,22 @@ def _skills_parser() -> argparse.ArgumentParser:
         description="Run a pretrained skill detector on a canonical HDF5 file.",
     )
     parser.add_argument("input", type=Path)
-    parser.add_argument("--checkpoint", type=Path, required=True)
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--checkpoint", type=Path, help="Use an explicit checkpoint path.")
+    selection.add_argument("--detector", help="Use a detector ID from the checkpoint registry.")
+    parser.add_argument("--case-study", help="Limit automatic selection to one case study.")
+    parser.add_argument("--registry", type=Path, help="Use a custom checkpoint registry JSON.")
+    parser.add_argument(
+        "--checkpoint-root",
+        type=Path,
+        help="Directory containing the registered checkpoint subdirectories.",
+    )
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--modality", choices=("timeseries", "camera", "hybrid"), default="timeseries")
+    parser.add_argument(
+        "--modality",
+        choices=("auto", "timeseries", "camera", "hybrid"),
+        default="auto",
+    )
     parser.add_argument("--lerobot-root", type=Path)
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--num-workers", type=int, default=0)
@@ -182,17 +195,61 @@ def _skills_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _skills_list_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="relaibotix skills list",
+        description="List registered pretrained skill detectors.",
+    )
+    parser.add_argument("--registry", type=Path)
+    parser.add_argument("--checkpoint-root", type=Path)
+    return parser
+
+
 def _run_skills(arguments: Sequence[str]) -> int:
+    from .skilldetector import load_registry, resolve_checkpoint, select_detector
+
+    if arguments and arguments[0] == "list":
+        args = _skills_list_parser().parse_args(arguments[1:])
+        registry = load_registry(args.registry)
+        for detector in registry.detectors.values():
+            try:
+                checkpoint = resolve_checkpoint(detector, args.checkpoint_root)
+                availability = str(checkpoint)
+            except FileNotFoundError:
+                availability = "checkpoint not installed"
+            default = " [recommended]" if detector.recommended else ""
+            print(
+                f"{detector.detector_id}: {detector.case_study}, "
+                f"{detector.modality}{default} - {availability}"
+            )
+        return 0
     if not arguments or arguments[0] != "infer":
-        raise SystemExit("Usage: relaibotix skills infer ...")
+        raise SystemExit("Usage: relaibotix skills {list,infer} ...")
     args = _skills_parser().parse_args(arguments[1:])
     from .skilldetector import run_inference
 
+    detector = None
+    if args.checkpoint is not None:
+        checkpoint = args.checkpoint
+        modality = "timeseries" if args.modality == "auto" else args.modality
+    else:
+        registry = load_registry(args.registry)
+        detector = select_detector(
+            registry,
+            args.input,
+            detector_id=args.detector,
+            case_study=args.case_study,
+            modality=None if args.modality == "auto" else args.modality,
+        )
+        checkpoint = resolve_checkpoint(detector, args.checkpoint_root)
+        modality = detector.modality
+        print(f"Selected detector: {detector.detector_id}")
+
     result = run_inference(
         h5_path=args.input,
-        checkpoint_path=args.checkpoint,
+        checkpoint_path=checkpoint,
         output_h5=args.output,
-        modality=args.modality,
+        modality=modality,
         lerobot_root=args.lerobot_root,
         batch_size=args.batch_size,
         num_workers=args.num_workers,

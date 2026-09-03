@@ -70,10 +70,29 @@ Training lives in the separate
 repository. RelAIBotiX only provides the inference connection:
 
 ```bash
+relaibotix skills list --checkpoint-root /path/to/detector/outputs
+
 relaibotix skills infer canonical.h5 \
-  --checkpoint /path/to/best.pt \
+  --checkpoint-root /path/to/detector/outputs \
   --output predicted.h5
 ```
+
+The bundled registry lists all currently trained mobile and Franka-simulation
+models. For HDF5-only inference, RelAIBotiX compares the recorded feature names
+with the registered schemas and automatically selects the recommended time-series
+detector. A different model can be selected explicitly:
+
+```bash
+relaibotix skills infer canonical.h5 \
+  --detector mobile-transformer \
+  --checkpoint-root /path/to/detector/outputs \
+  --output predicted.h5
+```
+
+`RELAIBOTIX_CHECKPOINT_ROOT` can be used instead of repeating `--checkpoint-root`.
+Model files remain in the detector release or future Hugging Face repository and
+are not duplicated in this Git repository. `--checkpoint` remains available for
+an explicit model path.
 
 The checkpoint defines the architecture, ordered feature set, training
 normalization, window alignment, and label taxonomy. These are deliberately not
@@ -85,7 +104,8 @@ checkpoints can also be selected explicitly:
 
 ```bash
 relaibotix skills infer canonical.h5 \
-  --checkpoint /path/to/camera-or-hybrid.pt \
+  --detector mobile-r3d18-d435i \
+  --checkpoint-root /path/to/detector/outputs \
   --output predicted.h5 \
   --modality camera \
   --lerobot-root /path/to/aligned/videos
@@ -231,9 +251,10 @@ STORM consumes the same `.pm` and `.pctl` files.
 
 The HDF5 and analysis interfaces are robot-independent. Existing pretrained
 detectors cover mobile manipulation and Franka simulation. SO-ARM, real Franka,
-LIBERO, and additional mobile checkpoints can be added without changing the
-RelAIBotiX interface, provided their checkpoints and canonical feature schemas are
-compatible with the detector package.
+and LIBERO remain intentionally absent from the registry until their detector
+checkpoints exist. They can then be added without changing the RelAIBotiX interface,
+provided their checkpoints and canonical feature schemas are compatible with the
+detector package.
 
 The Hello Robot Stretch 3 configuration is available at
 `configs/robots/hello_stretch.json`. It maps the logged wheel, lift, telescoping-arm,

@@ -6,7 +6,12 @@ import h5py
 import numpy as np
 import pytest
 
-from relaibotix.skilldetector.inference import run_inference
+from relaibotix.skilldetector import (
+    load_registry,
+    resolve_checkpoint,
+    run_inference,
+    select_detector,
+)
 
 
 def _write_grouped_input(path):
@@ -78,6 +83,36 @@ def test_inference_delegates_and_preserves_source(tmp_path, monkeypatch):
         assert output["data/demo_000000/labels/filtered_skill_id"][:].tolist() == [1, 1, 2]
 
 
+def test_auto_device_falls_back_to_cpu_for_mps_restore_error(tmp_path, monkeypatch):
+    _install_fake_detector(monkeypatch)
+    from relaibotix_skill_detector import timeseries
+
+    original = timeseries.predict_timeseries
+    devices = []
+
+    def fail_mps_then_predict(*args):
+        devices.append(args[5])
+        if args[5] == "auto":
+            raise RuntimeError("Invalid buffer size while restoring MPS storage")
+        return original(*args)
+
+    timeseries.predict_timeseries = fail_mps_then_predict
+    input_path = tmp_path / "input.h5"
+    output_path = tmp_path / "predicted.h5"
+    checkpoint = tmp_path / "model.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    _write_grouped_input(input_path)
+
+    run_inference(
+        h5_path=input_path,
+        checkpoint_path=checkpoint,
+        output_h5=output_path,
+        device="auto",
+    )
+
+    assert devices == ["auto", "cpu"]
+
+
 def test_inference_refuses_to_modify_source_in_place(tmp_path):
     input_path = tmp_path / "input.h5"
     _write_grouped_input(input_path)
@@ -99,3 +134,38 @@ def test_camera_and_hybrid_require_video_root(tmp_path):
                 output_h5=tmp_path / f"{modality}.h5",
                 modality=modality,
             )
+
+
+def test_bundled_registry_auto_selects_mobile_lstm(tmp_path):
+    registry = load_registry()
+    assert len(registry.detectors) == 8
+    mobile = registry.detectors["mobile-lstm"]
+    input_path = tmp_path / "mobile.h5"
+    with h5py.File(input_path, "w") as output:
+        data = output.create_group("data")
+        episode = data.create_group("demo_000000")
+        features = episode.create_dataset(
+            "features", data=np.zeros((2, len(mobile.required_features)))
+        )
+        features.attrs["feature_names"] = mobile.required_features
+        episode.create_dataset("timestamps/sim", data=[0.0, 0.05])
+        episode.create_dataset("episode/index", data=[0, 0])
+        episode.create_dataset("labels/skill_id", data=[-1, -1])
+
+    selected = select_detector(registry, input_path)
+    assert selected.detector_id == "mobile-lstm"
+    assert selected.modality == "timeseries"
+
+    checkpoint = tmp_path / selected.checkpoint
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_bytes(b"checkpoint")
+    assert resolve_checkpoint(selected, tmp_path) == checkpoint
+
+
+def test_registry_rejects_incompatible_explicit_detector(tmp_path):
+    registry = load_registry()
+    input_path = tmp_path / "input.h5"
+    _write_grouped_input(input_path)
+
+    with pytest.raises(ValueError, match="incompatible"):
+        select_detector(registry, input_path, detector_id="mobile-lstm")

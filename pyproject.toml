@@ -38,5 +38,8 @@ where = ["src"]
 [tool.setuptools.data-files]
 "share/relaibotix/configs/robots" = ["configs/robots/*.json"]
 
+[tool.setuptools.package-data]
+"relaibotix.skilldetector" = ["checkpoints.json"]
+
 [project.scripts]
 relaibotix = "relaibotix.cli:main"

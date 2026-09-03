@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import warnings
 
 import h5py
 
@@ -63,25 +64,25 @@ def run_inference(
     if input_path.resolve() == output_path.resolve():
         raise ValueError("Output HDF5 must differ from input; source data is never modified.")
 
-    try:
+    def predict(selected_device: str):
         if modality == "timeseries":
             from relaibotix_skill_detector.timeseries import predict_timeseries
 
-            written = predict_timeseries(
+            return predict_timeseries(
                 input_path,
                 checkpoint,
                 output_path,
                 batch_size,
                 num_workers,
-                device,
+                selected_device,
                 minimum_skill_frames,
             )
-        elif modality == "camera":
+        if modality == "camera":
             if lerobot_root is None:
                 raise ValueError("Camera inference requires --lerobot-root.")
             from relaibotix_skill_detector.camera import predict_camera
 
-            written = predict_camera(
+            return predict_camera(
                 input_path,
                 Path(lerobot_root),
                 checkpoint,
@@ -90,14 +91,14 @@ def run_inference(
                 target_stride,
                 minimum_skill_frames,
                 num_workers,
-                device,
+                selected_device,
             )
-        elif modality == "hybrid":
+        if modality == "hybrid":
             if lerobot_root is None:
                 raise ValueError("Hybrid inference requires --lerobot-root.")
             from relaibotix_skill_detector.hybrid import predict_hybrid
 
-            written = predict_hybrid(
+            return predict_hybrid(
                 input_path,
                 Path(lerobot_root),
                 checkpoint,
@@ -106,10 +107,24 @@ def run_inference(
                 target_stride,
                 minimum_skill_frames,
                 num_workers,
-                device,
+                selected_device,
             )
-        else:
-            raise ValueError("Modality must be one of: timeseries, camera, hybrid.")
+        raise ValueError("Modality must be one of: timeseries, camera, hybrid.")
+
+    try:
+        try:
+            written = predict(device)
+        except RuntimeError as error:
+            message = str(error).lower()
+            if device == "auto" and ("mps" in message or "invalid buffer size" in message):
+                warnings.warn(
+                    "MPS could not restore the detector checkpoint; retrying inference on CPU.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                written = predict("cpu")
+            else:
+                raise
     except ImportError as error:
         raise RuntimeError(
             "Skill inference requires the 'skill-detection' extra: "
