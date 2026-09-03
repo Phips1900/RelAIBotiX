@@ -79,6 +79,36 @@ def test_analysis_recognizes_actuator_force_channels():
     assert lift["max_abs_effort"] == pytest.approx(0.8)
 
 
+def test_configured_multi_axis_component_counts_time_once():
+    features = np.array([
+        [0.0, 0.0, 0.2, 0.8, 0.1, 0.4],
+        [1.0, 2.0, 0.2, 0.8, 0.1, 0.4],
+        [2.0, 0.0, 0.2, 0.8, 0.1, 0.4],
+    ])
+    names = ["p1", "p2", "v1", "v2", "e1", "e2"]
+    result = BehavioralAnalyzer(component_features={
+        "head": {
+            "position": ("p1", "p2"),
+            "velocity": ("v1", "v2"),
+            "effort": ("e1", "e2"),
+        }
+    }).analyze(
+        features=features,
+        feature_names=names,
+        skill_labels=np.array([1, 1, 1]),
+        timestamps=np.array([0.0, 1.0, 2.0]),
+        episode_ids=np.array([0, 0, 0]),
+    )
+
+    head = result.joint_metrics.iloc[0]
+    assert head["joint"] == "head"
+    assert head["position_axes"] == 2
+    assert head["traveled_distance"] == pytest.approx(6.0)
+    assert head["velocity_time_medium"] == pytest.approx(2.0)
+    assert head["effort_time_medium"] == pytest.approx(2.0)
+    assert head["active_time"] == pytest.approx(2.0)
+
+
 def test_analysis_requires_detector_labels():
     features, labels, timestamps, episodes = sample_data()
     labels[0] = -1

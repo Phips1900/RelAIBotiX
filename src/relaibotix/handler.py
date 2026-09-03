@@ -60,7 +60,7 @@ def run_relaibotix(h5_path: str,
         failure_table=failure_table,
         summary=summary,
         base_p_per_min=base_p_per_min,
-        components_to_add=["controller", "power_supply", "sensors", "camera"]
+        components_to_add=["controller", "power_supply", "camera"]
     )
 
     fts = build_fault_trees_from_failure_table_basic(
@@ -188,7 +188,7 @@ def _cli_relaibotix():
     parser.add_argument("--ckpt", help="Path to checkpoint file",
                         default="artifacts/checkpoints/skill_detector.ckpt")
     parser.add_argument("--config", help="Path to robot config JSON",
-                        default="config_files/robots/so_arm_config.json")
+                        default="configs/robots/so_arm.json")
     parser.add_argument("--output", default="artifacts/reports", help="Report output directory")
     parser.add_argument("--prism", default="artifacts/prism", help="PRISM output directory")
     args = parser.parse_args()

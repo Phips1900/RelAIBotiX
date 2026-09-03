@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import h5py
 import numpy as np
 
 from .h5 import H5Summary, decode_feature_names, detect_layout, inspect_h5
+
+if TYPE_CHECKING:
+    from relaibotix.reliability.config import RobotConfig
 
 
 IssueLevel = Literal["error", "warning"]
@@ -99,6 +102,72 @@ def _validate_feature_dataset(
     return names
 
 
+def _validate_timestamps(
+    dataset: h5py.Dataset,
+    issues: list[ValidationIssue],
+    location: str,
+) -> None:
+    values = np.asarray(dataset).reshape(-1)
+    if not np.isfinite(values).all():
+        _issue(issues, "error", "timestamps.non_finite", "Timestamps must be finite.", location)
+        return
+    differences = np.diff(values)
+    if np.any(differences < 0.0):
+        _issue(
+            issues,
+            "error",
+            "timestamps.decreasing",
+            "Timestamps must not decrease inside an episode.",
+            location,
+        )
+    elif np.any(differences == 0.0):
+        _issue(
+            issues,
+            "warning",
+            "timestamps.duplicate",
+            "Consecutive samples contain duplicate timestamps.",
+            location,
+        )
+
+
+def _validate_config_features(
+    feature_names: tuple[str, ...],
+    config: "RobotConfig",
+    issues: list[ValidationIssue],
+    location: str,
+) -> None:
+    available = set(feature_names)
+    configured: set[str] = set()
+    for component_name, component in config.components.items():
+        expected = {
+            feature_name
+            for feature_group in component.features.values()
+            for feature_name in feature_group
+        }
+        configured.update(expected)
+        missing = sorted(expected - available)
+        if missing:
+            _issue(
+                issues,
+                "error",
+                "config.features_missing",
+                f"Component '{component_name}' requires missing features: {', '.join(missing)}.",
+                location,
+            )
+
+    additional = sorted(available - configured)
+    if additional:
+        _issue(
+            issues,
+            "warning",
+            "config.features_additional",
+            f"{len(additional)} HDF5 features are not used by this robot config: "
+            + ", ".join(additional)
+            + ".",
+            location,
+        )
+
+
 def _validate_flat(h5_file: h5py.File, issues: list[ValidationIssue]) -> None:
     features = h5_file.get("features")
     if not isinstance(features, h5py.Dataset):
@@ -125,6 +194,29 @@ def _validate_flat(h5_file: h5py.File, issues: list[ValidationIssue]) -> None:
                 f"'{name}' must have shape ({sample_count},).",
                 f"/{dataset.name.lstrip('/')}",
             )
+
+    timestamps = required_datasets["timestamps"]
+    if (
+        isinstance(timestamps, h5py.Dataset)
+        and timestamps.ndim == 1
+        and timestamps.shape[0] == sample_count
+    ):
+        episode_ids = required_datasets["episode_ids"]
+        if isinstance(episode_ids, h5py.Dataset) and episode_ids.shape == timestamps.shape:
+            timestamp_values = np.asarray(timestamps)
+            id_values = np.asarray(episode_ids)
+            boundaries = np.flatnonzero(np.r_[True, id_values[1:] != id_values[:-1], True])
+            for start, end in zip(boundaries[:-1], boundaries[1:]):
+                differences = np.diff(timestamp_values[start:end])
+                if not np.isfinite(timestamp_values[start:end]).all():
+                    _issue(issues, "error", "timestamps.non_finite", "Timestamps must be finite.", "/timestamps")
+                    break
+                if np.any(differences < 0.0):
+                    _issue(issues, "error", "timestamps.decreasing", "Timestamps must not decrease inside an episode.", "/timestamps")
+                    break
+                if np.any(differences == 0.0):
+                    _issue(issues, "warning", "timestamps.duplicate", "Consecutive samples contain duplicate timestamps.", "/timestamps")
+                    break
 
     for name in ("predicted_labels", "labels_pred", "skills/predicted"):
         if name in h5_file:
@@ -194,6 +286,14 @@ def _validate_multi_episode(h5_file: h5py.File, issues: list[ValidationIssue]) -
                     f"/data/{demo_name}/{relative_path}",
                 )
 
+        timestamps = demo.get("timestamps/sim")
+        if (
+            isinstance(timestamps, h5py.Dataset)
+            and timestamps.ndim == 1
+            and timestamps.shape[0] == sample_count
+        ):
+            _validate_timestamps(timestamps, issues, f"/data/{demo_name}/timestamps/sim")
+
         skill_ids = next(
             (
                 demo.get(path)
@@ -225,9 +325,20 @@ def _validate_multi_episode(h5_file: h5py.File, issues: list[ValidationIssue]) -
             "skills.not_run",
             "Skill IDs are absent or unlabeled; mandatory skill inference must run before analysis.",
         )
+    elif -1 in skill_values:
+        _issue(
+            issues,
+            "warning",
+            "skills.unknown",
+            "Some skill IDs remain unknown (-1); resolve them before behavioral analysis.",
+        )
 
 
-def validate_h5(path: str | Path) -> ValidationReport:
+def validate_h5(
+    path: str | Path,
+    *,
+    config: "RobotConfig | None" = None,
+) -> ValidationReport:
     """Validate an HDF5 input without changing it."""
 
     input_path = Path(path)
@@ -244,6 +355,9 @@ def validate_h5(path: str | Path) -> ValidationReport:
             else:
                 _validate_multi_episode(h5_file, issues)
         summary = inspect_h5(input_path)
+        if config is not None:
+            location = "/features" if summary.layout == "flat" else "/data/*/features"
+            _validate_config_features(summary.feature_names, config, issues, location)
     except (OSError, ValueError, KeyError, TypeError) as error:
         _issue(issues, "error", "file.unsupported", str(error))
         summary = None

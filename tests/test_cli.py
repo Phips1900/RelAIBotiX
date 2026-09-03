@@ -7,6 +7,43 @@ from types import SimpleNamespace
 from relaibotix.cli import main
 
 
+def _write_robot_config(path, *, velocity_bands=(0.5, 1.0)):
+    path.write_text(json.dumps({
+        "schema_version": "1.0",
+        "robot": {"id": "test_robot", "name": "Test Robot", "type": "test"},
+        "failure_probability_basis": "per_minute",
+        "failure_probability_source": "test_source",
+        "exposure_assumptions": {
+            "source": "test_expert",
+            "position_step": 0.001,
+            "velocity_active": 0.03,
+            "effort_active": 0.1,
+            "velocity_bands": list(velocity_bands),
+            "effort_bands": [0.2, 0.6],
+            "velocity_multipliers": [1.0, 1.5, 2.0],
+            "effort_multipliers": [1.0, 1.5, 2.0],
+            "distance_multipliers": [1.0, 1.5, 2.0],
+        },
+        "components": {
+            "joint_1": {
+                "type": "revolute_joint",
+                "features": {
+                    "position": "joint_pos_1",
+                    "velocity": "joint_vel_1",
+                },
+                "failure_probability": 0.01,
+                "redundancy": {"copies": 1, "mode": "parallel"},
+            },
+            "controller": {
+                "type": "controller",
+                "always_active": True,
+                "failure_probability": 0.01,
+                "redundancy": {"copies": 1, "mode": "parallel"},
+            }
+        },
+    }))
+
+
 def _write_valid_input(path):
     with h5py.File(path, "w") as h5_file:
         features = h5_file.create_dataset("features", data=np.ones((4, 2)))
@@ -28,11 +65,37 @@ def test_h5_validate_command(tmp_path, capsys):
     assert "VALID:" in capsys.readouterr().out
 
 
+def test_h5_validate_checks_robot_config_features(tmp_path, capsys):
+    path = tmp_path / "input.h5"
+    config = tmp_path / "robot.json"
+    _write_valid_input(path)
+    _write_robot_config(config)
+
+    assert main(["h5", "validate", str(path), "--config", str(config)]) == 0
+    assert "config.features_missing" not in capsys.readouterr().out
+
+    with h5py.File(path, "r+") as h5_file:
+        h5_file["features"].attrs["feature_names"] = ["joint_pos_1", "unused"]
+
+    assert main(["h5", "validate", str(path), "--config", str(config)]) == 1
+    output = capsys.readouterr().out
+    assert "config.features_missing" in output
+    assert "joint_vel_1" in output
+
+
 def test_no_arguments_shows_new_cli_help(capsys):
     assert main([]) == 0
     output = capsys.readouterr().out
-    assert "{h5,skills,behavior,reliability}" in output
+    assert "{h5,config,skills,behavior,reliability}" in output
     assert "--ckpt" not in output
+
+
+def test_config_validate_command(capsys):
+    assert main(["config", "validate", "configs/robots/so_arm.json"]) == 0
+    output = capsys.readouterr().out
+    assert "VALID:" in output
+    assert "SO-ARM 101 (so_arm_101)" in output
+    assert "Measured components: 6" in output
 
 
 def test_h5_convert_command(tmp_path, capsys):
@@ -53,10 +116,7 @@ def test_behavior_command(tmp_path):
     input_path = tmp_path / "labeled.h5"
     output_path = tmp_path / "behavior"
     config_path = tmp_path / "robot.json"
-    config_path.write_text(
-        '{"exposure_assumptions":{"velocity_bands":[0.25,0.75]},'
-        '"components":{"joint_1":{"failure_probability":0.01}}}'
-    )
+    _write_robot_config(config_path, velocity_bands=(0.25, 0.75))
     with h5py.File(input_path, "w") as output:
         features = output.create_dataset(
             "features",
@@ -124,10 +184,7 @@ def test_reliability_command(tmp_path):
         '"total_duration":10.0}],"joint_summary":[]}'
     )
     config_path = tmp_path / "robot.json"
-    config_path.write_text(
-        '{"robot":"test","robot_type":"mobile","components":{'
-        '"Controller":{"failure_probability":0.01,"redundancy":false}}}'
-    )
+    _write_robot_config(config_path)
 
     assert main([
         "reliability",

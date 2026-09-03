@@ -25,6 +25,7 @@ class ReliabilityResult:
     dtmc: DTMCModel
     dtmc_solution: DTMCSolution
     exposure_assumptions: dict[str, object]
+    failure_probability_source: str
     behavior_thresholds_verified: bool | None
 
     def write_json(self, output_path: str | Path) -> Path:
@@ -32,6 +33,7 @@ class ReliabilityResult:
         destination.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "exposure_assumptions": self.exposure_assumptions,
+            "failure_probability_source": self.failure_probability_source,
             "behavior_thresholds_verified": self.behavior_thresholds_verified,
             "component_failures": json.loads(self.component_failures.to_json(orient="records")),
             "skill_probabilities": json.loads(self.skill_probabilities.to_json(orient="records")),
@@ -248,6 +250,7 @@ def analyze_reliability(
                 "effort_factor": effort_factor,
                 "effective_exposure": effective_exposure,
                 "base_failure_probability": component.failure_probability,
+                "failure_probability_source": config.probability_source,
                 "probability_basis": config.probability_basis,
                 "hazard_rate_per_second": rate,
                 "hazard": hazard,
@@ -280,6 +283,7 @@ def analyze_reliability(
         dtmc=dtmc,
         dtmc_solution=solve_dtmc(dtmc),
         exposure_assumptions=assumptions.as_dict(),
+        failure_probability_source=config.probability_source,
         behavior_thresholds_verified=thresholds_verified,
     )
 

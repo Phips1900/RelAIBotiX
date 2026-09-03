@@ -1,0 +1,157 @@
+{
+  "schema_version": "1.0",
+  "robot": {
+    "id": "hello_stretch_3",
+    "name": "Hello Robot Stretch 3",
+    "type": "mobile_manipulator"
+  },
+  "failure_probability_basis": "per_minute",
+  "failure_probability_source": "provisional_reuse_of_legacy_values_requires_expert_review",
+  "exposure_assumptions": {
+    "source": "example_assumption_set_requires_expert_review",
+    "position_step": 0.001,
+    "velocity_active": 0.03,
+    "effort_active": 0.1,
+    "velocity_bands": [0.5, 1.0],
+    "effort_bands": [0.2, 0.6],
+    "velocity_multipliers": [1.0, 1.5, 2.0],
+    "effort_multipliers": [1.0, 1.5, 2.0],
+    "distance_multipliers": [1.0, 1.5, 2.0]
+  },
+  "components": {
+    "left_wheel": {
+      "type": "continuous_joint",
+      "features": {
+        "position": "joint_pos_joint_left_wheel",
+        "velocity": "joint_vel_joint_left_wheel",
+        "effort": "actuator_force_left_wheel_vel"
+      },
+      "behavior_sources": ["left_wheel"],
+      "failure_probability": 8.33e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    },
+    "right_wheel": {
+      "type": "continuous_joint",
+      "features": {
+        "position": "joint_pos_joint_right_wheel",
+        "velocity": "joint_vel_joint_right_wheel",
+        "effort": "actuator_force_right_wheel_vel"
+      },
+      "behavior_sources": ["right_wheel"],
+      "failure_probability": 8.33e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    },
+    "lift": {
+      "type": "prismatic_joint",
+      "features": {
+        "position": "joint_pos_joint_lift",
+        "velocity": "joint_vel_joint_lift",
+        "effort": "actuator_force_lift"
+      },
+      "behavior_sources": ["lift"],
+      "failure_probability": 8.33e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    },
+    "telescoping_arm": {
+      "type": "prismatic_joint",
+      "features": {
+        "position": [
+          "joint_pos_joint_arm_l3",
+          "joint_pos_joint_arm_l2",
+          "joint_pos_joint_arm_l1",
+          "joint_pos_joint_arm_l0"
+        ],
+        "velocity": [
+          "joint_vel_joint_arm_l3",
+          "joint_vel_joint_arm_l2",
+          "joint_vel_joint_arm_l1",
+          "joint_vel_joint_arm_l0"
+        ],
+        "effort": "actuator_force_arm"
+      },
+      "behavior_sources": ["telescoping_arm"],
+      "failure_probability": 8.33e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    },
+    "wrist": {
+      "type": "wrist_assembly",
+      "features": {
+        "position": [
+          "joint_pos_joint_wrist_yaw",
+          "joint_pos_joint_wrist_pitch",
+          "joint_pos_joint_wrist_roll"
+        ],
+        "velocity": [
+          "joint_vel_joint_wrist_yaw",
+          "joint_vel_joint_wrist_pitch",
+          "joint_vel_joint_wrist_roll"
+        ],
+        "effort": [
+          "actuator_force_wrist_yaw",
+          "actuator_force_wrist_pitch",
+          "actuator_force_wrist_roll"
+        ]
+      },
+      "behavior_sources": ["wrist"],
+      "failure_probability": 8.33e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    },
+    "gripper": {
+      "type": "gripper",
+      "features": {
+        "position": [
+          "joint_pos_joint_gripper_slide",
+          "joint_pos_joint_gripper_finger_left_open",
+          "joint_pos_joint_gripper_finger_right_open"
+        ],
+        "velocity": [
+          "joint_vel_joint_gripper_slide",
+          "joint_vel_joint_gripper_finger_left_open",
+          "joint_vel_joint_gripper_finger_right_open"
+        ],
+        "effort": "actuator_force_gripper"
+      },
+      "behavior_sources": ["gripper"],
+      "failure_probability": 1.5e-7,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    },
+    "head": {
+      "type": "head_assembly",
+      "features": {
+        "position": [
+          "joint_pos_joint_head_pan",
+          "joint_pos_joint_head_tilt"
+        ],
+        "velocity": [
+          "joint_vel_joint_head_pan",
+          "joint_vel_joint_head_tilt"
+        ],
+        "effort": [
+          "actuator_force_head_pan",
+          "actuator_force_head_tilt"
+        ]
+      },
+      "behavior_sources": ["head"],
+      "failure_probability": 8.33e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    },
+    "controller": {
+      "type": "controller",
+      "always_active": true,
+      "failure_probability": 2.167e-10,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    },
+    "power_supply": {
+      "type": "power_supply",
+      "always_active": true,
+      "failure_probability": 6.674e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    },
+    "camera": {
+      "type": "camera",
+      "always_active": true,
+      "failure_probability": 1.029e-9,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    }
+  }
+}

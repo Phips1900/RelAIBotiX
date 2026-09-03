@@ -47,7 +47,13 @@ modification:
 ```bash
 relaibotix h5 inspect recording.h5
 relaibotix h5 validate recording.h5
+relaibotix h5 validate recording.h5 --config configs/robots/so_arm.json
 ```
+
+Supplying `--config` additionally checks every configured measurement against the
+HDF5 feature schema. Missing measurements are errors; unused HDF5 channels are
+reported as warnings so action commands and case-study metadata remain visible
+without being treated as reliability inputs.
 
 A supported flat legacy file can be converted to a separate canonical copy:
 
@@ -92,7 +98,7 @@ RelAIBotiX release dataset or conversion requirement.
 
 ```bash
 relaibotix behavior predicted.h5 \
-  --config config_files/robots/so_arm_config.json \
+  --config configs/robots/so_arm.json \
   --output artifacts/behavior
 ```
 
@@ -107,15 +113,20 @@ injection are intentionally outside this release pipeline.
 
 ## Reliability foundation
 
-Robot configurations in `config_files/robots` define component failure
-probabilities and redundancy. Existing Boolean redundancy values remain supported:
-`true` means two identical copies whose combined loss is an AND event. New configs
-can state the copy count explicitly:
+Robot configurations in `configs/robots` use one versioned schema for robot identity,
+typed components, HDF5 feature mappings, probabilities, redundancy, and exposure
+assumptions. Redundancy is always explicit:
+
+```bash
+relaibotix config validate configs/robots/so_arm.json
+```
 
 ```json
 {
+  "type": "controller",
+  "always_active": true,
   "failure_probability": 1e-6,
-  "redundancy": {"copies": 3}
+  "redundancy": {"copies": 3, "mode": "parallel"}
 }
 ```
 
@@ -165,7 +176,7 @@ empirical DTMC:
 
 ```bash
 relaibotix reliability artifacts/behavior/behavior.json \
-  --config config_files/robots/so_arm_config.json \
+  --config configs/robots/so_arm.json \
   --output artifacts/reliability \
   --sensitivity
 ```
@@ -204,7 +215,7 @@ with the optional STORM backend:
 
 ```bash
 relaibotix reliability artifacts/behavior/behavior.json \
-  --config config_files/robots/so_arm_config.json \
+  --config configs/robots/so_arm.json \
   --output artifacts/reliability \
   --storm
 ```
@@ -220,6 +231,17 @@ detectors cover mobile manipulation and Franka simulation. SO-ARM, real Franka,
 LIBERO, and additional mobile checkpoints can be added without changing the
 RelAIBotiX interface, provided their checkpoints and canonical feature schemas are
 compatible with the detector package.
+
+The Hello Robot Stretch 3 configuration is available at
+`configs/robots/hello_stretch.json`. It maps the logged wheel, lift, telescoping-arm,
+wrist, gripper, and head mechanisms plus the always-active controller, power supply,
+and camera. Multi-axis wrist and head measurements are combined into one reliability
+component each: traveled distance is summed across axes, while velocity and effort
+use the most heavily loaded axis at each timestep so elapsed time is counted once.
+Its current failure probabilities and exposure bands are
+explicitly provisional and require expert review. The available mobile ACT rollout
+file is structurally valid but contains only unknown skill IDs, so detector inference
+must run before behavioral or reliability analysis.
 
 ## License
 

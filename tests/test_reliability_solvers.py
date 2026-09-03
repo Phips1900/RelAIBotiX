@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pytest
 
@@ -17,6 +19,30 @@ from relaibotix.reliability.solver import create_mc_transition_matrix, solve_mc
 from relaibotix.reliability.graph import create_mc_graph
 from relaibotix.reliability.storm import run_storm
 from types import SimpleNamespace
+
+
+EXPOSURE_ASSUMPTIONS = {
+    "source": "test_expert",
+    "position_step": 0.001,
+    "velocity_active": 0.03,
+    "effort_active": 0.1,
+    "velocity_bands": [0.5, 1.0],
+    "effort_bands": [0.2, 0.6],
+    "velocity_multipliers": [1.0, 2.0, 5.0],
+    "effort_multipliers": [1.0, 1.25, 1.75],
+    "distance_multipliers": [1.0, 1.5, 2.0],
+}
+
+
+def _write_robot_config(path, components, *, assumptions=None):
+    path.write_text(json.dumps({
+        "schema_version": "1.0",
+        "robot": {"id": "test_robot", "name": "Test Robot", "type": "test"},
+        "failure_probability_basis": "per_minute",
+        "failure_probability_source": "test_source",
+        "exposure_assumptions": assumptions or EXPOSURE_ASSUMPTIONS,
+        "components": components,
+    }))
 
 
 def test_bottom_up_and_bdd_agree_for_a_tree():
@@ -103,30 +129,71 @@ def test_markov_solver_does_not_mutate_state_lists():
     assert chain.states == ["run"]
 
 
-def test_existing_robot_config_defines_joints_and_redundancy():
-    config = load_robot_config("config_files/robots/franka_config.json")
+def test_existing_robot_config_defines_measured_components_and_redundancy():
+    config = load_robot_config("configs/robots/franka.json")
 
+    assert config.robot_id == "franka_emika_panda"
     assert config.name == "Franka Emika Panda"
-    assert config.joint_count == 7
+    assert config.measured_component_count == 8
     assert config.redundant_components == {
-        "Controller": 2,
-        "Power_Supply": 2,
-        "Sensors": 2,
+        "controller": 2,
+        "power_supply": 2,
     }
 
-    tree = config.build_fault_tree(active_components=["Joint_1", "Controller"])
-    assert tree.gates["loss_of_Controller"] == Gate(
-        "AND", ("Controller_1", "Controller_2")
+    tree = config.build_fault_tree(active_components=["joint_1", "controller"])
+    assert tree.gates["loss_of_controller"] == Gate(
+        "AND", ("controller_1", "controller_2")
     )
     assert bottom_up_probability(tree) == pytest.approx(bdd_probability(tree).probability)
 
 
+def test_hello_stretch_config_maps_logged_components():
+    config = load_robot_config("configs/robots/hello_stretch.json")
+
+    assert config.robot_id == "hello_stretch_3"
+    assert config.robot_type == "mobile_manipulator"
+    assert config.measured_component_count == 7
+    assert config.redundant_components == {}
+    assert config.components["telescoping_arm"].features["position"] == (
+        "joint_pos_joint_arm_l3",
+        "joint_pos_joint_arm_l2",
+        "joint_pos_joint_arm_l1",
+        "joint_pos_joint_arm_l0",
+    )
+    assert config.components["wrist"].features["position"] == (
+        "joint_pos_joint_wrist_yaw",
+        "joint_pos_joint_wrist_pitch",
+        "joint_pos_joint_wrist_roll",
+    )
+    assert config.components["head"].features["position"] == (
+        "joint_pos_joint_head_pan",
+        "joint_pos_joint_head_tilt",
+    )
+    assert "wrist_yaw" not in config.components
+    assert "head_pan" not in config.components
+
+
+def test_legacy_robot_config_shape_is_rejected(tmp_path):
+    path = tmp_path / "legacy.json"
+    path.write_text(
+        '{"robot":"Legacy Robot","robot_type":"Manipulator",'
+        '"components":{"Joint_1":{"failure_probability":0.1,"redundancy":false}}}'
+    )
+
+    with pytest.raises(ValueError, match="schema_version"):
+        load_robot_config(path)
+
+
 def test_structured_redundancy_can_define_copy_count(tmp_path):
     path = tmp_path / "robot.json"
-    path.write_text(
-        '{"robot":"test","robot_type":"mobile","components":{'
-        '"drive":{"failure_probability":0.1,"redundancy":{"copies":3}}}}'
-    )
+    _write_robot_config(path, {
+        "drive": {
+            "type": "drive",
+            "always_active": True,
+            "failure_probability": 0.1,
+            "redundancy": {"copies": 3, "mode": "parallel"},
+        }
+    })
 
     config = load_robot_config(path)
     tree = config.build_fault_tree()
@@ -138,15 +205,21 @@ def test_structured_redundancy_can_define_copy_count(tmp_path):
 
 def test_expert_exposure_assumptions_are_loaded(tmp_path):
     path = tmp_path / "robot.json"
-    path.write_text(
-        '{"exposure_assumptions":{'
-        '"source":"expert-review-1",'
-        '"velocity_bands":[0.2,0.7],'
-        '"velocity_multipliers":[1.0,1.5,2.0],'
-        '"effort_multipliers":[1.0,1.5,2.0],'
-        '"distance_multipliers":[1.0,1.5,2.0]},'
-        '"components":{"drive":{"failure_probability":0.1}}}'
-    )
+    assumptions = dict(EXPOSURE_ASSUMPTIONS)
+    assumptions.update({
+        "source": "expert-review-1",
+        "velocity_bands": [0.2, 0.7],
+        "velocity_multipliers": [1.0, 1.5, 2.0],
+        "effort_multipliers": [1.0, 1.5, 2.0],
+    })
+    _write_robot_config(path, {
+        "drive": {
+            "type": "drive",
+            "always_active": True,
+            "failure_probability": 0.1,
+            "redundancy": {"copies": 1, "mode": "parallel"},
+        }
+    }, assumptions=assumptions)
 
     assumptions = load_robot_config(path).exposure_assumptions
 
@@ -184,22 +257,32 @@ def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
         }]),
     )
     config_path = tmp_path / "robot.json"
-    config_path.write_text(
-        '{"robot":"test","robot_type":"arm","components":{'
-        '"Joint_1":{"failure_probability":0.01,"redundancy":false,'
-        '"distance_thresholds":[1.0,3.0],"distance_unit":"radian"},'
-        '"Controller":{"failure_probability":0.02,"redundancy":false}}}'
-    )
+    _write_robot_config(config_path, {
+        "joint_1": {
+            "type": "revolute_joint",
+            "features": {"position": "joint_pos_1", "velocity": "joint_vel_1"},
+            "failure_probability": 0.01,
+            "redundancy": {"copies": 1, "mode": "parallel"},
+            "distance_thresholds": [1.0, 3.0],
+            "distance_unit": "radian",
+        },
+        "controller": {
+            "type": "controller",
+            "always_active": True,
+            "failure_probability": 0.02,
+            "redundancy": {"copies": 1, "mode": "parallel"},
+        },
+    })
 
     result = analyze_reliability(behavior, load_robot_config(config_path))
     rows = result.component_failures.set_index("component")
 
-    assert rows.loc["Joint_1", "base_exposure"] == pytest.approx(3.0)
-    assert rows.loc["Joint_1", "average_traveled_distance"] == pytest.approx(2.0)
-    assert rows.loc["Joint_1", "distance_band"] == "medium"
-    assert rows.loc["Joint_1", "distance_factor"] == pytest.approx(1.5)
-    assert rows.loc["Joint_1", "effective_exposure"] == pytest.approx(16.5)
-    assert rows.loc["Controller", "effective_exposure"] == pytest.approx(10.0)
+    assert rows.loc["joint_1", "base_exposure"] == pytest.approx(3.0)
+    assert rows.loc["joint_1", "average_traveled_distance"] == pytest.approx(2.0)
+    assert rows.loc["joint_1", "distance_band"] == "medium"
+    assert rows.loc["joint_1", "distance_factor"] == pytest.approx(1.5)
+    assert rows.loc["joint_1", "effective_exposure"] == pytest.approx(16.5)
+    assert rows.loc["controller", "effective_exposure"] == pytest.approx(10.0)
     assert result.skill_probabilities.iloc[0]["bottom_up_probability"] == pytest.approx(
         result.skill_probabilities.iloc[0]["bdd_probability"]
     )
@@ -227,7 +310,14 @@ def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
 
 def test_sensitivity_factor_is_validated(tmp_path):
     config_path = tmp_path / "robot.json"
-    config_path.write_text('{"components":{"controller":{"failure_probability":0.1}}}')
+    _write_robot_config(config_path, {
+        "controller": {
+            "type": "controller",
+            "always_active": True,
+            "failure_probability": 0.1,
+            "redundancy": {"copies": 1, "mode": "parallel"},
+        }
+    })
     behavior = BehavioralResult(
         segments=pd.DataFrame([{"episode_key": "demo_0", "skill_id": 1, "start_index": 0}]),
         joint_metrics=pd.DataFrame(),
@@ -246,10 +336,16 @@ def test_sensitivity_factor_is_validated(tmp_path):
 
 def test_distance_thresholds_are_validated(tmp_path):
     path = tmp_path / "robot.json"
-    path.write_text(
-        '{"components":{"joint_1":{"failure_probability":0.1,'
-        '"distance_thresholds":[2.0,1.0]}}}'
-    )
+    _write_robot_config(path, {
+        "joint_1": {
+            "type": "revolute_joint",
+            "features": {"position": "joint_pos_1"},
+            "failure_probability": 0.1,
+            "redundancy": {"copies": 1, "mode": "parallel"},
+            "distance_thresholds": [2.0, 1.0],
+            "distance_unit": "radian",
+        }
+    })
 
     with pytest.raises(ValueError, match="Distance thresholds"):
         load_robot_config(path)
@@ -275,7 +371,14 @@ def test_reliability_rejects_behavior_threshold_mismatch(tmp_path):
         }},
     )
     config_path = tmp_path / "robot.json"
-    config_path.write_text('{"components":{"controller":{"failure_probability":0.1}}}')
+    _write_robot_config(config_path, {
+        "controller": {
+            "type": "controller",
+            "always_active": True,
+            "failure_probability": 0.1,
+            "redundancy": {"copies": 1, "mode": "parallel"},
+        }
+    })
 
     with pytest.raises(ValueError, match="different exposure thresholds"):
         analyze_reliability(behavior, load_robot_config(config_path))

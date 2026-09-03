@@ -68,6 +68,38 @@ def _joint_features(feature_names: Sequence[str]) -> dict[str, dict[str, int]]:
     return joints
 
 
+def _configured_features(
+    feature_names: Sequence[str],
+    component_features: Mapping[str, Mapping[str, Sequence[str]]],
+) -> dict[str, dict[str, tuple[int, ...]]]:
+    """Resolve configured HDF5 columns into reliability-component measurements."""
+
+    indices = {str(name): index for index, name in enumerate(feature_names)}
+    signal_names = {
+        "position": "pos",
+        "velocity": "vel",
+        "effort": "effort",
+        "torque": "effort",
+    }
+    resolved: dict[str, dict[str, tuple[int, ...]]] = {}
+    for component, signals in component_features.items():
+        columns: dict[str, tuple[int, ...]] = {}
+        for signal, names in signals.items():
+            normalized_signal = signal_names.get(str(signal).lower())
+            if normalized_signal is None or not names:
+                continue
+            missing = [name for name in names if name not in indices]
+            if missing:
+                raise ValueError(
+                    f"Component '{component}' references missing HDF5 features: "
+                    + ", ".join(missing)
+                )
+            columns[normalized_signal] = tuple(indices[name] for name in names)
+        if columns:
+            resolved[str(component)] = columns
+    return resolved
+
+
 def _finite_stat(values: np.ndarray, operation) -> float:
     finite = values[np.isfinite(values)]
     return float(operation(finite)) if finite.size else float("nan")
@@ -98,9 +130,11 @@ class BehavioralAnalyzer:
         *,
         thresholds: BehavioralThresholds | None = None,
         skill_names: Mapping[int, str] | None = None,
+        component_features: Mapping[str, Mapping[str, Sequence[str]]] | None = None,
     ) -> None:
         self.thresholds = thresholds or BehavioralThresholds()
         self.skill_names = dict(skill_names or {})
+        self.component_features = component_features
 
     def analyze(
         self,
@@ -128,7 +162,11 @@ class BehavioralAnalyzer:
         names = dict(skill_names or {})
         names.update(self.skill_names)
 
-        joints = _joint_features(feature_names)
+        joints = (
+            _configured_features(feature_names, self.component_features)
+            if self.component_features is not None
+            else _joint_features(feature_names)
+        )
         if not joints:
             raise ValueError("No joint position, velocity, or effort features were found.")
 
@@ -166,7 +204,12 @@ class BehavioralAnalyzer:
             joint_metrics=joint_metrics,
             skill_summary=self._summarize_skills(segments),
             joint_summary=self._summarize_joints(joint_metrics),
-            metadata={"behavioral_thresholds": self.thresholds.as_dict()},
+            metadata={
+                "behavioral_thresholds": self.thresholds.as_dict(),
+                "measurement_mapping": (
+                    "robot_config" if self.component_features is not None else "feature_names"
+                ),
+            },
         )
 
     def analyze_h5(
@@ -323,13 +366,31 @@ class BehavioralAnalyzer:
         self,
         features: np.ndarray,
         timestamps: np.ndarray,
-        columns: Mapping[str, int],
+        columns: Mapping[str, int | tuple[int, ...]],
         joint: str,
         segment: Mapping[str, object],
     ) -> dict[str, object]:
-        position = features[:, columns["pos"]] if "pos" in columns else None
-        velocity = features[:, columns["vel"]] if "vel" in columns else None
-        effort = features[:, columns["effort"]] if "effort" in columns else None
+        def signal_values(signal: str) -> tuple[np.ndarray | None, int]:
+            if signal not in columns:
+                return None, 0
+            raw_columns = columns[signal]
+            selected = features[:, raw_columns]
+            if selected.ndim == 1:
+                return selected, 1
+            if selected.shape[1] == 1:
+                return selected[:, 0], 1
+            # A subsystem's instantaneous load is classified by its most
+            # heavily used axis, so elapsed time is counted only once.
+            return np.max(np.abs(selected), axis=1), int(selected.shape[1])
+
+        position_columns = columns.get("pos")
+        position_matrix = None
+        if position_columns is not None:
+            position_matrix = features[:, position_columns]
+            if position_matrix.ndim == 1:
+                position_matrix = position_matrix[:, np.newaxis]
+        velocity, velocity_axes = signal_values("vel")
+        effort, effort_axes = signal_values("effort")
         dt = np.diff(timestamps)
         if np.any(dt < 0.0):
             raise ValueError(f"Timestamps decrease inside episode {segment['episode_id']}.")
@@ -337,14 +398,20 @@ class BehavioralAnalyzer:
         traveled_distance = float("nan")
         start_position = end_position = position_range = float("nan")
         position_active = np.zeros(dt.size, dtype=bool)
-        if position is not None:
-            adjacent = np.isfinite(position[:-1]) & np.isfinite(position[1:])
-            steps = np.abs(np.diff(position))
+        position_axes = 0
+        if position_matrix is not None:
+            position_axes = int(position_matrix.shape[1])
+            adjacent = np.isfinite(position_matrix[:-1]) & np.isfinite(position_matrix[1:])
+            steps = np.abs(np.diff(position_matrix, axis=0))
             traveled_distance = float(np.sum(steps[adjacent]))
-            position_active = adjacent & (steps > self.thresholds.position_step)
-            start_position = _finite_stat(position[:1], np.mean)
-            end_position = _finite_stat(position[-1:], np.mean)
-            position_range = _finite_stat(position, np.ptp)
+            position_active = np.any(
+                adjacent & (steps > self.thresholds.position_step), axis=1
+            )
+            if position_axes == 1:
+                position = position_matrix[:, 0]
+                start_position = _finite_stat(position[:1], np.mean)
+                end_position = _finite_stat(position[-1:], np.mean)
+                position_range = _finite_stat(position, np.ptp)
 
         vel_low, vel_medium, vel_high, velocity_active = _exposure(
             velocity, dt, self.thresholds.velocity_active, self.thresholds.velocity_bands
@@ -363,6 +430,9 @@ class BehavioralAnalyzer:
             "skill_id": segment["skill_id"],
             "skill": segment["skill"],
             "joint": joint,
+            "position_axes": position_axes,
+            "velocity_axes": velocity_axes,
+            "effort_axes": effort_axes,
             "duration": duration,
             "start_position": start_position,
             "end_position": end_position,

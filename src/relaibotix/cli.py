@@ -27,8 +27,13 @@ def _print_summary(path: str | Path) -> None:
         print(f"  - {name}")
 
 
-def _print_validation(path: str | Path) -> bool:
-    report = validate_h5(path)
+def _print_validation(path: str | Path, config_path: str | Path | None = None) -> bool:
+    config = None
+    if config_path is not None:
+        from .reliability import load_robot_config
+
+        config = load_robot_config(config_path)
+    report = validate_h5(path, config=config)
     state = "VALID" if report.valid else "INVALID"
     print(f"{state}: {report.path}")
     if report.summary is not None:
@@ -50,6 +55,11 @@ def _h5_parser() -> argparse.ArgumentParser:
 
     validate_parser = commands.add_parser("validate", help="Validate an HDF5 input without changing it.")
     validate_parser.add_argument("input", type=Path)
+    validate_parser.add_argument(
+        "--config",
+        type=Path,
+        help="Also verify that the HDF5 features satisfy a robot configuration.",
+    )
 
     convert_parser = commands.add_parser("convert", help="Write a canonical RelAIBotiX HDF5 copy.")
     convert_parser.add_argument("input", type=Path)
@@ -64,11 +74,36 @@ def _run_h5(arguments: Sequence[str]) -> int:
         _print_summary(args.input)
         return 0
     if args.h5_command == "validate":
-        return 0 if _print_validation(args.input) else 1
+        return 0 if _print_validation(args.input, args.config) else 1
 
     output = convert_h5(args.input, args.output, overwrite=args.overwrite)
     print(f"Converted: {args.input} -> {output}")
     return 0 if _print_validation(output) else 1
+
+
+def _config_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="relaibotix config",
+        description="Validate a RelAIBotiX robot configuration.",
+    )
+    commands = parser.add_subparsers(dest="config_command", required=True)
+    validate_parser = commands.add_parser("validate", help="Validate a robot JSON file.")
+    validate_parser.add_argument("input", type=Path)
+    return parser
+
+
+def _run_config(arguments: Sequence[str]) -> int:
+    from .reliability import load_robot_config
+
+    args = _config_parser().parse_args(arguments)
+    config = load_robot_config(args.input)
+    print(f"VALID: {args.input}")
+    print(f"  Robot: {config.name} ({config.robot_id})")
+    print(f"  Components: {len(config.components)}")
+    print(f"  Measured components: {config.measured_component_count}")
+    print(f"  Failure probability source: {config.probability_source}")
+    print(f"  Exposure assumption source: {config.exposure_assumptions.source}")
+    return 0
 
 
 def _behavior_parser() -> argparse.ArgumentParser:
@@ -100,16 +135,24 @@ def _run_behavior(arguments: Sequence[str]) -> int:
     if args.config is not None:
         from .reliability import load_robot_config
 
-        assumptions = load_robot_config(args.config).exposure_assumptions
+        robot_config = load_robot_config(args.config)
+        assumptions = robot_config.exposure_assumptions
         from .behavioral import BehavioralThresholds
 
-        analyzer = BehavioralAnalyzer(thresholds=BehavioralThresholds(
-            position_step=assumptions.position_step,
-            velocity_active=assumptions.velocity_active,
-            effort_active=assumptions.effort_active,
-            velocity_bands=assumptions.velocity_bands,
-            effort_bands=assumptions.effort_bands,
-        ))
+        analyzer = BehavioralAnalyzer(
+            thresholds=BehavioralThresholds(
+                position_step=assumptions.position_step,
+                velocity_active=assumptions.velocity_active,
+                effort_active=assumptions.effort_active,
+                velocity_bands=assumptions.velocity_bands,
+                effort_bands=assumptions.effort_bands,
+            ),
+            component_features={
+                name: component.features
+                for name, component in robot_config.components.items()
+                if any(component.features.values())
+            },
+        )
     result = analyzer.analyze_h5(
         args.input,
         skill_labels_dataset=args.skill_labels,
@@ -251,7 +294,11 @@ def _top_level_parser() -> argparse.ArgumentParser:
         prog="relaibotix",
         description="Validate data, run skill inference, and analyze robot behavior.",
     )
-    parser.add_argument("command", nargs="?", choices=("h5", "skills", "behavior", "reliability"))
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=("h5", "config", "skills", "behavior", "reliability"),
+    )
     return parser
 
 
@@ -262,6 +309,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if arguments and arguments[0] == "h5":
         return _run_h5(arguments[1:])
+    if arguments and arguments[0] == "config":
+        return _run_config(arguments[1:])
     if arguments and arguments[0] == "behavior":
         return _run_behavior(arguments[1:])
     if arguments and arguments[0] == "skills":
