@@ -29,6 +29,21 @@ is needed:
 python -m pip install -e '.[skill-detection]'
 ```
 
+## Native desktop GUI
+
+Install the optional PySide6 interface together with the skill-detector runtime:
+
+```bash
+python -m pip install -e '.[gui,skill-detection]'
+relaibotix gui
+```
+
+The desktop application provides native file selection, robot-configuration and
+checkpoint selection, HDF5 validation, background execution of the complete
+pipeline, optional exact PRISM/STORM verification, and a concise results overview.
+It invokes the same in-process workflow as the command-line interface; reliability
+calculations are not reimplemented in the GUI.
+
 ## HDF5 input
 
 The canonical layout stores each episode independently:

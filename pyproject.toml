@@ -28,6 +28,9 @@ reporting = [
   "matplotlib>=3.8",
   "seaborn>=0.13",
 ]
+gui = [
+  "PySide6>=6.7",
+]
 dev = [
   "pytest>=8.0",
 ]

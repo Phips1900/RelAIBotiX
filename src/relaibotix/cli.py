@@ -490,6 +490,25 @@ def _run_experiments(arguments: Sequence[str]) -> int:
     return 0
 
 
+def _run_gui(arguments: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="relaibotix gui",
+        description="Launch the native RelAIBotiX desktop interface.",
+    )
+    parser.parse_args(arguments)
+    try:
+        from .gui import launch_gui
+
+        return launch_gui()
+    except ModuleNotFoundError as error:
+        if error.name == "PySide6":
+            raise RuntimeError(
+                "The native GUI requires the optional dependency: "
+                "pip install 'relaibotix[gui]'"
+            ) from error
+        raise
+
+
 def _pipeline_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="relaibotix run",
@@ -617,7 +636,7 @@ def _top_level_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=("h5", "config", "skills", "behavior", "reliability", "experiments", "run"),
+        choices=("h5", "config", "skills", "behavior", "reliability", "experiments", "run", "gui"),
     )
     return parser
 
@@ -641,5 +660,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_experiments(arguments[1:])
     if arguments and arguments[0] == "run":
         return _run_pipeline(arguments[1:])
+    if arguments and arguments[0] == "gui":
+        return _run_gui(arguments[1:])
     _top_level_parser().parse_args(arguments)
     return 0

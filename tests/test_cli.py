@@ -102,7 +102,7 @@ def test_h5_validate_checks_robot_config_features(tmp_path, capsys):
 def test_no_arguments_shows_new_cli_help(capsys):
     assert main([]) == 0
     output = capsys.readouterr().out
-    assert "{h5,config,skills,behavior,reliability,experiments,run}" in output
+    assert "{h5,config,skills,behavior,reliability,experiments,run,gui}" in output
     assert "--ckpt" not in output
 
 
@@ -325,3 +325,10 @@ def test_experiments_command_writes_publication_outputs(tmp_path):
     provenance = json.loads((output_path / "provenance.json").read_text())
     assert provenance["solvers"]["internal"]["enabled"] is True
     assert provenance["experiments"][0]["input_sha256"]
+
+
+def test_gui_command_dispatches_without_importing_qt(monkeypatch):
+    import relaibotix.gui
+
+    monkeypatch.setattr(relaibotix.gui, "launch_gui", lambda: 17)
+    assert main(["gui"]) == 17
