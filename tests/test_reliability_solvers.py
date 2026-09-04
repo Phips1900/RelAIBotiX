@@ -137,7 +137,6 @@ def test_existing_robot_config_defines_measured_components_and_redundancy():
     assert config.measured_component_count == 8
     assert config.redundant_components == {
         "controller": 2,
-        "power_supply": 2,
     }
 
     tree = config.build_fault_tree(active_components=["joint_1", "controller"])
@@ -156,6 +155,8 @@ def test_libero_config_matches_position_velocity_only_panda_logs():
     assert config.components["joint_1"].features["velocity"] == ("joint_vel_1",)
     assert config.components["joint_1"].features["effort"] == ()
     assert config.components["camera"].redundancy_copies == 1
+    assert config.components["controller"].redundancy_copies == 2
+    assert config.components["power_supply"].redundancy_copies == 1
 
 
 def test_hello_stretch_config_maps_logged_components():

@@ -345,12 +345,27 @@ class BehavioralAnalyzer:
             if missing:
                 raise ValueError(f"HDF5 input is missing required datasets: {', '.join(missing)}")
             feature_dataset = source["features"]
+            timestamps = np.asarray(source["timestamps"][:], dtype=float).reshape(-1)
+            source_episode_ids = np.asarray(source[episode_path][:]).reshape(-1)
+            if timestamps.size != source_episode_ids.size:
+                raise ValueError("Flat HDF5 timestamps and episode IDs are not aligned.")
+            boundaries = np.r_[
+                True,
+                (source_episode_ids[1:] != source_episode_ids[:-1])
+                | (timestamps[1:] < timestamps[:-1]),
+            ]
+            run_ids = np.cumsum(boundaries, dtype=np.int64) - 1
+            episode_keys = np.asarray(
+                [f"run_{run_id:06d}" for run_id in run_ids],
+                dtype=object,
+            )
             return self.analyze(
                 features=feature_dataset[:],
                 feature_names=decode_feature_names(feature_dataset),
                 skill_labels=source[label_path][:],
-                timestamps=source["timestamps"][:],
-                episode_ids=source[episode_path][:],
+                timestamps=timestamps,
+                episode_ids=run_ids,
+                episode_keys=episode_keys,
             )
 
     def _analyze_grouped_h5(

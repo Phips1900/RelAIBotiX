@@ -75,7 +75,7 @@
       "type": "power_supply",
       "always_active": true,
       "failure_probability": 6.674e-7,
-      "redundancy": {"copies": 2, "mode": "parallel"}
+      "redundancy": {"copies": 1, "mode": "parallel"}
     },
     "camera": {
       "type": "camera",

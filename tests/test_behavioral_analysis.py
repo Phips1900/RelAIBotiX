@@ -189,6 +189,28 @@ def test_analyze_h5_and_export(tmp_path):
     assert result.metadata["behavioral_thresholds"]["velocity_bands"] == [0.5, 1.0]
 
 
+def test_flat_h5_assigns_unique_keys_when_source_episode_ids_repeat(tmp_path):
+    input_path = tmp_path / "repeated_ids.h5"
+    with h5py.File(input_path, "w") as output:
+        features = output.create_dataset(
+            "features",
+            data=np.arange(6, dtype=float).reshape(-1, 1),
+        )
+        features.attrs["feature_names"] = ["joint_pos_1"]
+        output.create_dataset("timestamps", data=[0.0, 1.0, 0.0, 1.0, 0.0, 1.0])
+        output.create_dataset("labels", data=[0, 0, 1, 1, 0, 0])
+        output.create_dataset("predicted_labels", data=[1, 1, 1, 1, 1, 1])
+
+    result = BehavioralAnalyzer().analyze_h5(input_path)
+
+    assert result.segments["episode_key"].tolist() == [
+        "run_000000",
+        "run_000001",
+        "run_000002",
+    ]
+    assert result.skill_summary.iloc[0]["n_episodes"] == 3
+
+
 def test_analyze_grouped_detector_output_uses_filtered_labels_and_taxonomy(tmp_path):
     input_path = tmp_path / "predicted.h5"
     with h5py.File(input_path, "w") as output:
