@@ -6,7 +6,7 @@
     "type": "simulated_fixed_manipulator"
   },
   "failure_probability_basis": "per_minute",
-  "failure_probability_source": "legacy_values_require_expert_review",
+  "failure_probability_source": "legacy_values_with_expert_power_supply_adjustment",
   "exposure_assumptions": {
     "source": "example_assumption_set_requires_expert_review",
     "position_step": 0.001,
@@ -90,7 +90,7 @@
     "power_supply": {
       "type": "power_supply",
       "always_active": true,
-      "failure_probability": 6.674e-8,
+      "failure_probability": 6.674e-9,
       "redundancy": {"copies": 1, "mode": "parallel"}
     },
     "camera": {

@@ -157,6 +157,7 @@ def test_libero_config_matches_position_velocity_only_panda_logs():
     assert config.components["camera"].redundancy_copies == 1
     assert config.components["controller"].redundancy_copies == 2
     assert config.components["power_supply"].redundancy_copies == 1
+    assert config.components["power_supply"].failure_probability == pytest.approx(6.674e-9)
 
 
 def test_hello_stretch_config_maps_logged_components():
