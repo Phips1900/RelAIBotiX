@@ -1,0 +1,150 @@
+{
+  "schema_version": "1.0",
+  "name": "RelAIBotiX publication experiments",
+  "experiments": [
+    {
+      "id": "so_mujoco_act",
+      "setting": "CS1",
+      "platform": "SO-ARM 101 (MuJoCo)",
+      "task": "pick&place",
+      "policy": "ACT",
+      "input_h5": "../../datasets/IL/act/act_20.h5",
+      "robot_config": "../robots/so_arm.json",
+      "scope": "optional",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place", "4": "Stack"},
+      "label_source": "existing_detector_predictions"
+    },
+    {
+      "id": "so_mujoco_smolvla",
+      "setting": "CS1",
+      "platform": "SO-ARM 101 (MuJoCo)",
+      "task": "pick&place",
+      "policy": "SmolVLA",
+      "input_h5": "../../datasets/IL/smolVLA_fine_tuned/eval_smolvlabase_mj2_.h5",
+      "robot_config": "../robots/so_arm.json",
+      "scope": "optional",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place", "4": "Stack"},
+      "label_source": "existing_detector_predictions"
+    },
+    {
+      "id": "so_real_act",
+      "setting": "CS2",
+      "platform": "SO-ARM 101 (real hardware)",
+      "task": "cube stacking",
+      "policy": "ACT",
+      "input_h5": "../../datasets/IL/act/act_real.h5",
+      "robot_config": "../robots/so_arm.json",
+      "scope": "included",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place", "4": "Stack"},
+      "label_source": "existing_detector_predictions"
+    },
+    {
+      "id": "so_real_smolvla",
+      "setting": "CS2",
+      "platform": "SO-ARM 101 (real hardware)",
+      "task": "cube stacking",
+      "policy": "SmolVLA",
+      "input_h5": "../../datasets/IL/smolVLA/smolvla_real.h5",
+      "robot_config": "../robots/so_arm.json",
+      "scope": "included",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place", "4": "Stack"},
+      "label_source": "existing_detector_predictions"
+    },
+    {
+      "id": "libero_object_act",
+      "setting": "CS3",
+      "platform": "Franka (RoboSuite LIBERO)",
+      "task": "LIBERO-Object",
+      "policy": "ACT",
+      "input_h5": "../../datasets/IL/act/act_log.h5",
+      "robot_config": "../robots/franka_libero.json",
+      "scope": "included",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place"},
+      "label_source": "existing_detector_predictions"
+    },
+    {
+      "id": "libero_object_smolvla",
+      "setting": "CS3",
+      "platform": "Franka (RoboSuite LIBERO)",
+      "task": "LIBERO-Object",
+      "policy": "SmolVLA",
+      "input_h5": "../../datasets/IL/smolVLA/smolvla_log.h5",
+      "robot_config": "../robots/franka_libero.json",
+      "scope": "included",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place"},
+      "label_source": "existing_detector_predictions"
+    },
+    {
+      "id": "libero_object_pi05",
+      "setting": "CS3",
+      "platform": "Franka (RoboSuite LIBERO)",
+      "task": "LIBERO-Object",
+      "policy": "pi0.5 (LeRobot ckpt)",
+      "input_h5": "../../datasets/IL/pi05/libero_pi05_object_log.h5",
+      "robot_config": "../robots/franka_libero.json",
+      "scope": "included",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place"},
+      "label_source": "existing_detector_predictions"
+    },
+    {
+      "id": "libero_object_pi0fast",
+      "setting": "CS3",
+      "platform": "Franka (RoboSuite LIBERO)",
+      "task": "LIBERO-Object",
+      "policy": "pi0-FAST (LeRobot ckpt)",
+      "input_h5": "../../datasets/IL/pi0fast/pi0fast_log_object.h5",
+      "robot_config": "../robots/franka_libero.json",
+      "scope": "included",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place"},
+      "label_source": "existing_detector_predictions"
+    },
+    {
+      "id": "libero_spatial_pi05",
+      "setting": "CS3",
+      "platform": "Franka (RoboSuite LIBERO)",
+      "task": "LIBERO-Spatial",
+      "policy": "pi0.5 (LeRobot ckpt)",
+      "input_h5": "../../datasets/IL/pi05/libero_pi05_spatial_log.h5",
+      "robot_config": "../robots/franka_libero.json",
+      "scope": "included",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place"},
+      "label_source": "existing_detector_predictions"
+    },
+    {
+      "id": "libero_spatial_pi0fast",
+      "setting": "CS3",
+      "platform": "Franka (RoboSuite LIBERO)",
+      "task": "LIBERO-Spatial",
+      "policy": "pi0-FAST (LeRobot ckpt)",
+      "input_h5": "../../datasets/IL/pi0fast/pi0fast_log_spatial.h5",
+      "robot_config": "../robots/franka_libero.json",
+      "scope": "included",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place"},
+      "label_source": "existing_detector_predictions"
+    },
+    {
+      "id": "libero_goal_pi05",
+      "setting": "CS3",
+      "platform": "Franka (RoboSuite LIBERO)",
+      "task": "LIBERO-Goal",
+      "policy": "pi0.5 (LeRobot ckpt)",
+      "input_h5": "../../datasets/IL/pi05/libero_pi05_goal_log.h5",
+      "robot_config": "../robots/franka_libero.json",
+      "scope": "included",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place", "4": "Open", "5": "Drag", "6": "Use Switch"},
+      "label_source": "existing_detector_predictions"
+    },
+    {
+      "id": "libero_goal_pi0fast",
+      "setting": "CS3",
+      "platform": "Franka (RoboSuite LIBERO)",
+      "task": "LIBERO-Goal",
+      "policy": "pi0-FAST (LeRobot ckpt)",
+      "input_h5": "../../datasets/IL/pi0fast/pi0fast_log_goal.h5",
+      "robot_config": "../robots/franka_libero.json",
+      "scope": "included",
+      "skill_names": {"0": "Move", "1": "Pick", "2": "Carry", "3": "Place", "4": "Open", "5": "Drag", "6": "Use Switch"},
+      "label_source": "existing_detector_predictions"
+    }
+  ]
+}

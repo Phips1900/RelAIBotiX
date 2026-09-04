@@ -102,7 +102,7 @@ def test_h5_validate_checks_robot_config_features(tmp_path, capsys):
 def test_no_arguments_shows_new_cli_help(capsys):
     assert main([]) == 0
     output = capsys.readouterr().out
-    assert "{h5,config,skills,behavior,reliability,run}" in output
+    assert "{h5,config,skills,behavior,reliability,experiments,run}" in output
     assert "--ckpt" not in output
 
 
@@ -237,6 +237,7 @@ def test_run_command_executes_complete_pipeline(tmp_path, monkeypatch):
     assert (output_path / "behavior" / "behavior.json").is_file()
     assert (output_path / "reliability" / "reliability.json").is_file()
     assert (output_path / "reliability" / "model.pm").is_file()
+    assert (output_path / "reliability" / "model_repeated_runs.pm").is_file()
     assert (output_path / "reliability" / "sensitivity.csv").is_file()
 
 
@@ -266,5 +267,61 @@ def test_reliability_command(tmp_path):
     assert (output_path / "reliability.json").is_file()
     assert (output_path / "model.pm").is_file()
     assert (output_path / "model.pctl").is_file()
+    assert (output_path / "model_repeated_runs.pm").is_file()
+    assert (output_path / "model_repeated_runs.pctl").is_file()
     assert (output_path / "sensitivity.csv").is_file()
     assert (output_path / "sensitivity.json").is_file()
+    reliability = json.loads((output_path / "reliability.json").read_text())
+    assert reliability["repeated_run_mttf"]["hours"] > 0.0
+
+
+def test_experiments_command_writes_publication_outputs(tmp_path):
+    input_path = tmp_path / "input.h5"
+    config_path = tmp_path / "robot.json"
+    manifest_path = tmp_path / "experiments.json"
+    output_path = tmp_path / "publication"
+    _write_valid_input(input_path)
+    with h5py.File(input_path, "r+") as h5_file:
+        h5_file.create_dataset("skills/predicted", data=np.asarray([0, 0, 1, 1]))
+    _write_robot_config(config_path)
+    manifest_path.write_text(json.dumps({
+        "schema_version": "1.0",
+        "name": "Test experiments",
+        "experiments": [{
+            "id": "test_policy",
+            "setting": "CS-test",
+            "platform": "Test Robot",
+            "task": "test task",
+            "policy": "test policy",
+            "input_h5": "input.h5",
+            "robot_config": "robot.json",
+            "scope": "included",
+            "skill_names": {"0": "Move", "1": "Place"},
+            "label_source": "existing_detector_predictions",
+        }],
+    }))
+
+    assert main([
+        "experiments",
+        "run",
+        str(manifest_path),
+        "--output",
+        str(output_path),
+    ]) == 0
+
+    experiment = output_path / "test_policy"
+    assert (experiment / "behavior" / "behavior.json").is_file()
+    assert (experiment / "reliability" / "reliability.json").is_file()
+    assert (experiment / "reliability" / "sensitivity.csv").is_file()
+    for filename in (
+        "paper_results.csv",
+        "paper_results.md",
+        "paper_results.tex",
+        "provenance.json",
+    ):
+        assert (output_path / filename).is_file()
+    assert "Move" in (experiment / "behavior" / "behavior.json").read_text()
+    assert "MTTF (h)" in (output_path / "paper_results.tex").read_text()
+    provenance = json.loads((output_path / "provenance.json").read_text())
+    assert provenance["solvers"]["internal"]["enabled"] is True
+    assert provenance["experiments"][0]["input_sha256"]

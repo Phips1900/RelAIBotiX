@@ -21,14 +21,16 @@ except Exception:
 from .fault_tree import BDDResult, FaultTreeModel, Gate, bdd_probability, bottom_up_probability
 from .config import ComponentConfig, ExposureAssumptions, RobotConfig, load_robot_config
 from .analysis import ReliabilityResult, analyze_component_sensitivity, analyze_reliability
-from .dtmc import DTMCModel, DTMCSolution, solve_dtmc
+from .dtmc import DTMCModel, DTMCSolution, RepeatedRunMTTF, solve_dtmc, solve_repeated_run_mttf
 from .storm import StormResult, run_storm
+from .prism_backend import PrismResult, run_prism
 
 __all__ = [
     "BDDResult",
     "ComponentConfig",
     "DTMCModel",
     "DTMCSolution",
+    "RepeatedRunMTTF",
     "FaultTreeModel",
     "ExposureAssumptions",
     "Gate",
@@ -36,6 +38,7 @@ __all__ = [
     "MarkovChain",
     "RobotConfig",
     "ReliabilityResult",
+    "PrismResult",
     "StormResult",
     "FaultTree",
     "bdd_probability",
@@ -44,5 +47,7 @@ __all__ = [
     "analyze_component_sensitivity",
     "load_robot_config",
     "solve_dtmc",
+    "solve_repeated_run_mttf",
     "run_storm",
+    "run_prism",
 ]

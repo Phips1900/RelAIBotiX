@@ -83,6 +83,19 @@ class DTMCSolution:
         return float(self.absorption_probabilities.get("done", 0.0))
 
 
+@dataclass(frozen=True)
+class RepeatedRunMTTF:
+    """Expected operating time until failure across repeated independent runs."""
+
+    seconds: float
+    state_time_seconds: Mapping[str, float]
+    method: str = "done_redirected_to_start"
+
+    @property
+    def hours(self) -> float:
+        return self.seconds / 3600.0
+
+
 def solve_dtmc(model: DTMCModel, *, start_state: str = "start") -> DTMCSolution:
     """Solve absorption probabilities and expected steps from one start state."""
 
@@ -102,4 +115,57 @@ def solve_dtmc(model: DTMCModel, *, start_state: str = "start") -> DTMCSolution:
             for index, state in enumerate(model.absorbing_states)
         },
         expected_steps=float(expected_steps[start, 0]),
+    )
+
+
+def solve_repeated_run_mttf(
+    model: DTMCModel,
+    state_time_seconds: Mapping[str, float],
+    *,
+    start_state: str = "start",
+    done_state: str = "done",
+) -> RepeatedRunMTTF:
+    """Solve expected time to failure when completed runs restart.
+
+    Transitions to ``done`` are redirected to ``start``. Failure states remain
+    absorbing. A non-negative time reward is charged for each transient-state
+    visit, matching the repeated-run PRISM reward model.
+    """
+
+    if start_state not in model.states:
+        raise ValueError(f"Unknown DTMC start state: {start_state}")
+    if done_state not in model.absorbing_states:
+        raise ValueError(f"Unknown DTMC done state: {done_state}")
+    unknown_rewards = set(state_time_seconds) - set(model.states)
+    if unknown_rewards:
+        raise ValueError(f"Time rewards reference unknown states: {sorted(unknown_rewards)}")
+    if any(not np.isfinite(value) or value < 0.0 for value in state_time_seconds.values()):
+        raise ValueError("State time rewards must be finite and non-negative.")
+
+    index = {state: position for position, state in enumerate(model.states)}
+    q = np.zeros((len(model.states), len(model.states)), dtype=float)
+    for source in model.states:
+        source_index = index[source]
+        for target, probability in model.transitions[source].items():
+            if target == done_state:
+                q[source_index, index[start_state]] += probability
+            elif target in index:
+                q[source_index, index[target]] += probability
+
+    rewards = np.asarray(
+        [float(state_time_seconds.get(state, 0.0)) for state in model.states],
+        dtype=float,
+    )
+    try:
+        expected_rewards = np.linalg.solve(np.eye(len(model.states)) - q, rewards)
+    except np.linalg.LinAlgError as error:
+        raise ValueError(
+            "Repeated-run MTTF is undefined because modeled failure is not reached almost surely."
+        ) from error
+    seconds = float(expected_rewards[index[start_state]])
+    if not np.isfinite(seconds) or seconds < 0.0:
+        raise ValueError("Repeated-run MTTF did not produce a finite non-negative value.")
+    return RepeatedRunMTTF(
+        seconds=seconds,
+        state_time_seconds=dict(state_time_seconds),
     )

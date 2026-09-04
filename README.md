@@ -264,9 +264,34 @@ relaibotix reliability artifacts/behavior/behavior.json \
   --storm
 ```
 
-Use `--storm-exact` for STORM's exact mode or `--storm-executable` when the binary
-is not on the normal executable path. PRISM remains a first-class exported backend;
-STORM consumes the same `.pm` and `.pctl` files.
+Exact arithmetic is the default for both PRISM and STORM. Use
+`--approximate-solvers` only for exploratory runs, or `--storm-executable` and
+`--prism-executable` when the binaries are not on the normal executable path.
+Both tools consume the exported `.pm` and `.pctl` models and are checked against
+the internal solver.
+
+RelAIBotiX also exports `model_repeated_runs.pm`. In that model, completing one
+recorded run returns to the start state while modeled component failures remain
+absorbing. Its expected accumulated time until failure is reported as
+`repeated_run_mttf` in `reliability.json`. This represents repeated operation with
+the measured mixture of skill sequences; it is separate from the failure
+probability of one run.
+
+The complete legacy paper experiment set is declared in one small manifest and can
+be regenerated with:
+
+```bash
+relaibotix experiments run configs/experiments/paper.json \
+  --output artifacts/paper_validation \
+  --prism --prism-executable /path/to/prism
+```
+
+This writes per-experiment behavioral and reliability data plus combined CSV,
+Markdown, and LaTeX tables and a provenance file containing input/configuration
+hashes and solver versions. The manifest explicitly uses predictions already stored
+in the legacy HDF5 recordings so the previous experiments can be recalculated. New
+case-study data must use `relaibotix run`, which performs skill inference before the
+behavioral and reliability stages.
 
 ## Current case-study scope
 

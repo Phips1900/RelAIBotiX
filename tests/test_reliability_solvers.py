@@ -18,6 +18,7 @@ import pandas as pd
 from relaibotix.reliability.solver import create_mc_transition_matrix, solve_mc
 from relaibotix.reliability.graph import create_mc_graph
 from relaibotix.reliability.storm import run_storm
+from relaibotix.reliability.prism_backend import run_prism
 from types import SimpleNamespace
 
 
@@ -306,6 +307,9 @@ def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
     assert result.dtmc_solution.failure_probability == pytest.approx(
         result.skill_probabilities.iloc[0]["bdd_probability"]
     )
+    assert result.repeated_run_mttf.seconds == pytest.approx(
+        10.0 / result.dtmc_solution.failure_probability
+    )
 
     sensitivity = analyze_component_sensitivity(
         behavior,
@@ -402,17 +406,20 @@ def test_storm_backend_parses_one_result_per_property(tmp_path, monkeypatch):
     properties = tmp_path / "model.pctl"
     model.write_text("dtmc\n")
     properties.write_text('P=? [ F "failure" ]\nP=? [ F "done" ]\n')
-    captured = {"commands": []}
+    captured = {}
 
     monkeypatch.setattr("relaibotix.reliability.storm.shutil.which", lambda executable: "/usr/bin/storm")
 
     def fake_run(command, **options):
-        captured["commands"].append(command)
+        captured["command"] = command
         captured["options"] = options
-        value = "1/8" if len(captured["commands"]) == 1 else "7/8"
         return SimpleNamespace(
             returncode=0,
-            stdout=f"Result (for initial states): {value}\n",
+            stdout=(
+                "Storm 1.14.0\n"
+                "Result (for initial states): 1/8\n"
+                "Result (for initial states): 7/8\n"
+            ),
             stderr="",
         )
 
@@ -420,8 +427,42 @@ def test_storm_backend_parses_one_result_per_property(tmp_path, monkeypatch):
     result = run_storm(model, properties, exact=True)
 
     assert result.values == (0.125, 0.875)
-    assert captured["commands"] == [
-        ["/usr/bin/storm", "--prism", str(model), "--prop", 'P=? [ F "failure" ]', "--exact"],
-        ["/usr/bin/storm", "--prism", str(model), "--prop", 'P=? [ F "done" ]', "--exact"],
+    assert captured["command"] == [
+        "/usr/bin/storm", "--prism", str(model), "--prop",
+        'P=? [ F "failure" ]; P=? [ F "done" ]', "--exact",
+    ]
+    assert captured["options"]["timeout"] == 120.0
+    assert result.version == "1.14.0"
+
+
+def test_prism_backend_parses_exact_results_and_version(tmp_path, monkeypatch):
+    model = tmp_path / "model.pm"
+    properties = tmp_path / "model.pctl"
+    model.write_text("dtmc\n")
+    properties.write_text('P=? [ F "failure" ]\nP=? [ F "done" ]\n')
+    captured = {}
+
+    monkeypatch.setattr(
+        "relaibotix.reliability.prism_backend.shutil.which",
+        lambda executable: "/usr/bin/prism",
+    )
+
+    def fake_run(command, **options):
+        captured["command"] = command
+        captured["options"] = options
+        return SimpleNamespace(
+            returncode=0,
+            stdout="Version: 4.8.1\nResult: 1/8\nResult: 7/8\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("relaibotix.reliability.prism_backend.subprocess.run", fake_run)
+    result = run_prism(model, properties)
+
+    assert result.values == (0.125, 0.875)
+    assert result.version == "4.8.1"
+    assert result.exact is True
+    assert captured["command"] == [
+        "/usr/bin/prism", str(model), str(properties), "-exact"
     ]
     assert captured["options"]["timeout"] == 120.0

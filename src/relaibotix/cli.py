@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 from pathlib import Path
 import sys
@@ -272,9 +273,15 @@ def _reliability_parser() -> argparse.ArgumentParser:
     parser.add_argument("behavior", type=Path, help="behavior.json produced by the behavior command")
     parser.add_argument("--config", type=Path, required=True, help="Robot reliability JSON")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--prism", action="store_true", help="Verify models with PRISM")
+    parser.add_argument("--prism-executable", default="prism")
     parser.add_argument("--storm", action="store_true", help="Verify the PRISM model with STORM")
     parser.add_argument("--storm-executable", default="storm")
-    parser.add_argument("--storm-exact", action="store_true")
+    parser.add_argument(
+        "--approximate-solvers",
+        action="store_true",
+        help="Use approximate external model checking instead of publication-grade exact mode.",
+    )
     parser.add_argument(
         "--sensitivity",
         nargs="?",
@@ -288,7 +295,7 @@ def _reliability_parser() -> argparse.ArgumentParser:
 
 def _run_reliability(arguments: Sequence[str]) -> int:
     from .reliability import analyze_reliability, load_robot_config
-    from .reliability.prism import write_prism_and_props
+    from .reliability.prism import write_prism_and_props, write_prism_no_done_and_props
 
     args = _reliability_parser().parse_args(arguments)
     behavior = BehavioralResult.read_json(args.behavior)
@@ -314,6 +321,50 @@ def _run_reliability(arguments: Sequence[str]) -> int:
         if not sensitivity.empty:
             print(f"Most influential component: {sensitivity.iloc[0]['component']}")
     prism_path, properties_path = write_prism_and_props(result.dtmc, args.output / "model")
+    repeated_path, repeated_properties = write_prism_no_done_and_props(
+        result.dtmc,
+        args.output / "model_repeated_runs",
+        state_time_seconds=dict(result.repeated_run_mttf.state_time_seconds),
+        start_state="start",
+        precision=20,
+    )
+    exact = not args.approximate_solvers
+
+    def verify(values, expected, solver_name):
+        # Long-horizon rewards make the double-precision internal linear solve
+        # mildly ill-conditioned. Exact external results still agree to at least
+        # eight significant digits for the publication models.
+        if len(values) < len(expected) or any(
+            not math.isclose(actual, reference, rel_tol=2e-8, abs_tol=1e-12)
+            for actual, reference in zip(values, expected)
+        ):
+            raise RuntimeError(f"{solver_name} and the internal solver disagree.")
+
+    expected = (
+        result.dtmc_solution.failure_probability,
+        result.dtmc_solution.completion_without_modeled_failure_probability,
+    )
+    repeated_expected = (1.0, result.repeated_run_mttf.seconds)
+    if args.prism:
+        from .reliability import run_prism
+
+        prism_result = run_prism(
+            prism_path,
+            properties_path,
+            executable=args.prism_executable,
+            exact=exact,
+        )
+        verify(prism_result.values[:2], expected, "PRISM")
+        prism_result.write_json(args.output / "prism.json")
+        prism_mttf = run_prism(
+            repeated_path,
+            repeated_properties,
+            executable=args.prism_executable,
+            exact=exact,
+        )
+        verify(prism_mttf.values, repeated_expected, "PRISM repeated-run MTTF")
+        prism_mttf.write_json(args.output / "prism_mttf.json")
+        print(f"PRISM verified {len(prism_result.values) + len(prism_mttf.values)} properties")
     if args.storm:
         from .reliability import run_storm
 
@@ -321,28 +372,121 @@ def _run_reliability(arguments: Sequence[str]) -> int:
             prism_path,
             properties_path,
             executable=args.storm_executable,
-            exact=args.storm_exact,
+            exact=exact,
         )
-        expected = (
-            result.dtmc_solution.failure_probability,
-            result.dtmc_solution.completion_without_modeled_failure_probability,
-        )
-        if len(storm_result.values) >= 2 and any(
-            not math.isclose(actual, reference, rel_tol=1e-8, abs_tol=1e-12)
-            for actual, reference in zip(storm_result.values[:2], expected)
-        ):
-            raise RuntimeError(
-                "STORM and the internal DTMC solver disagree on failure or completion probability."
-            )
+        verify(storm_result.values[:2], expected, "STORM")
         storm_result.write_json(args.output / "storm.json")
-        print(f"STORM verified {len(storm_result.values)} properties")
+        storm_mttf = run_storm(
+            repeated_path,
+            repeated_properties,
+            executable=args.storm_executable,
+            exact=exact,
+        )
+        verify(storm_mttf.values, repeated_expected, "STORM repeated-run MTTF")
+        storm_mttf.write_json(args.output / "storm_mttf.json")
+        print(f"STORM verified {len(storm_result.values) + len(storm_mttf.values)} properties")
     print(f"Reliability analysis: {len(result.skill_probabilities)} skills")
     print(f"System failure probability: {result.dtmc_solution.failure_probability:.12g}")
     print(
         "Completion without modeled failure: "
         f"{result.dtmc_solution.completion_without_modeled_failure_probability:.12g}"
     )
+    print(f"Repeated-run MTTF: {result.repeated_run_mttf.hours:.12g} h")
     print(f"Results: {args.output}")
+    return 0
+
+
+def _experiments_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="relaibotix experiments",
+        description="Reproduce a declared set of publication experiments.",
+    )
+    commands = parser.add_subparsers(dest="experiments_command", required=True)
+    run_parser = commands.add_parser("run", help="Run every experiment in a manifest.")
+    run_parser.add_argument("manifest", type=Path)
+    run_parser.add_argument("--output", type=Path, required=True)
+    run_parser.add_argument("--prism", action="store_true")
+    run_parser.add_argument("--prism-executable", default="prism")
+    run_parser.add_argument("--storm", action="store_true")
+    run_parser.add_argument("--storm-executable", default="storm")
+    run_parser.add_argument("--approximate-solvers", action="store_true")
+    return parser
+
+
+def _run_experiments(arguments: Sequence[str]) -> int:
+    from .experiments import (
+        configured_analyzer,
+        load_experiment_manifest,
+        write_experiment_summary,
+    )
+    from .reliability import load_robot_config
+
+    args = _experiments_parser().parse_args(arguments)
+    manifest = load_experiment_manifest(args.manifest)
+    args.output.mkdir(parents=True, exist_ok=True)
+    print(
+        "Publication regression: using detector predictions already stored in the "
+        "declared legacy HDF5 files."
+    )
+    for index, experiment in enumerate(manifest.experiments, start=1):
+        print(
+            f"[{index}/{len(manifest.experiments)}] "
+            f"{experiment.setting} / {experiment.task} / {experiment.policy}"
+        )
+        if not _print_validation(experiment.input_h5, experiment.robot_config):
+            raise ValueError(f"Invalid experiment input: {experiment.experiment_id}")
+        config = load_robot_config(experiment.robot_config)
+        result = configured_analyzer(config, experiment.skill_names).analyze_h5(
+            experiment.input_h5
+        )
+        behavior_output = args.output / experiment.experiment_id / "behavior"
+        result.write_csv(behavior_output)
+        result.write_json(behavior_output / "behavior.json")
+
+        reliability_arguments = [
+            str(behavior_output / "behavior.json"),
+            "--config",
+            str(experiment.robot_config),
+            "--output",
+            str(args.output / experiment.experiment_id / "reliability"),
+            "--sensitivity",
+        ]
+        if args.prism:
+            reliability_arguments.extend(
+                ("--prism", "--prism-executable", args.prism_executable)
+            )
+        if args.storm:
+            reliability_arguments.extend(
+                ("--storm", "--storm-executable", args.storm_executable)
+            )
+        if args.approximate_solvers:
+            reliability_arguments.append("--approximate-solvers")
+        _run_reliability(reliability_arguments)
+
+    solver_metadata: dict[str, object] = {
+        "internal": {
+            "enabled": True,
+            "method": "linear_system_double_precision",
+        }
+    }
+    first_output = args.output / manifest.experiments[0].experiment_id / "reliability"
+    for solver, enabled in (("prism", args.prism), ("storm", args.storm)):
+        metadata: dict[str, object] = {"enabled": enabled}
+        if enabled:
+            result = json.loads((first_output / f"{solver}.json").read_text())
+            metadata.update({
+                "version": result["version"],
+                "exact": result["exact"],
+                "verified_experiments": len(manifest.experiments),
+            })
+        solver_metadata[solver] = metadata
+    paths = write_experiment_summary(
+        manifest,
+        args.output,
+        solver_metadata=solver_metadata,
+    )
+    print(f"Experiment set complete: {len(manifest.experiments)} experiments")
+    print(f"Publication table: {paths[0]}")
     return 0
 
 
@@ -378,9 +522,11 @@ def _pipeline_parser() -> argparse.ArgumentParser:
         const=10.0,
         metavar="FACTOR",
     )
+    parser.add_argument("--prism", action="store_true")
+    parser.add_argument("--prism-executable", default="prism")
     parser.add_argument("--storm", action="store_true")
     parser.add_argument("--storm-executable", default="storm")
-    parser.add_argument("--storm-exact", action="store_true")
+    parser.add_argument("--approximate-solvers", action="store_true")
     return parser
 
 
@@ -452,10 +598,12 @@ def _run_pipeline(arguments: Sequence[str]) -> int:
     ]
     if args.sensitivity is not None:
         reliability_arguments.extend(("--sensitivity", str(args.sensitivity)))
+    if args.prism:
+        reliability_arguments.extend(("--prism", "--prism-executable", args.prism_executable))
     if args.storm:
         reliability_arguments.extend(("--storm", "--storm-executable", args.storm_executable))
-        if args.storm_exact:
-            reliability_arguments.append("--storm-exact")
+    if args.approximate_solvers:
+        reliability_arguments.append("--approximate-solvers")
     _run_reliability(reliability_arguments)
     print(f"Pipeline complete: {args.output}")
     return 0
@@ -469,7 +617,7 @@ def _top_level_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=("h5", "config", "skills", "behavior", "reliability", "run"),
+        choices=("h5", "config", "skills", "behavior", "reliability", "experiments", "run"),
     )
     return parser
 
@@ -489,6 +637,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_skills(arguments[1:])
     if arguments and arguments[0] == "reliability":
         return _run_reliability(arguments[1:])
+    if arguments and arguments[0] == "experiments":
+        return _run_experiments(arguments[1:])
     if arguments and arguments[0] == "run":
         return _run_pipeline(arguments[1:])
     _top_level_parser().parse_args(arguments)

@@ -17,11 +17,15 @@ class StormResult:
     properties: tuple[str, ...]
     values: tuple[float, ...]
     stdout: str
+    version: str | None = None
+    exact: bool = False
 
     def write_json(self, output_path: str | Path) -> Path:
         destination = Path(output_path)
         destination.write_text(json.dumps({
             "executable": self.executable,
+            "version": self.version,
+            "exact": self.exact,
             "results": [
                 {"property": prop, "value": value}
                 for prop, value in zip(self.properties, self.values)
@@ -53,36 +57,40 @@ def run_storm(
         for line in properties_file.read_text().splitlines()
         if line.strip() and not line.lstrip().startswith("//")
     )
-    values: list[float] = []
-    outputs: list[str] = []
-    for prop in properties:
-        command = [resolved, "--prism", str(model), "--prop", prop]
-        if exact:
-            command.append("--exact")
-        completed = subprocess.run(
-            command,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
+    command = [resolved, "--prism", str(model), "--prop", "; ".join(properties)]
+    if exact:
+        command.append("--exact")
+    completed = subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise RuntimeError(
+            f"STORM failed with exit code {completed.returncode}: {detail}"
         )
-        if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip()
-            raise RuntimeError(
-                f"STORM failed for property '{prop}' with exit code "
-                f"{completed.returncode}: {detail}"
-            )
-        raw_values = re.findall(
-            r"Result(?:\s+\((?:for )?initial states\))?:\s*([^\r\n]+)",
-            completed.stdout,
+    raw_values = re.findall(
+        r"Result(?:\s+\((?:for )?initial states\))?:\s*([^\r\n]+)",
+        completed.stdout,
+    )
+    if len(raw_values) != len(properties):
+        raise RuntimeError(
+            f"STORM returned {len(raw_values)} results for {len(properties)} properties."
         )
-        if len(raw_values) != 1:
-            raise RuntimeError(
-                f"STORM returned {len(raw_values)} numeric results for property '{prop}'."
-            )
-        try:
-            values.append(float(Fraction(raw_values[0].strip().split()[0])))
-        except (ValueError, ZeroDivisionError) as error:
-            raise RuntimeError(f"STORM returned a non-numeric result: {raw_values[0]}") from error
-        outputs.append(completed.stdout)
-    return StormResult(resolved, properties, tuple(values), "\n".join(outputs))
+    try:
+        values = tuple(float(Fraction(value.strip().split()[0])) for value in raw_values)
+    except (ValueError, ZeroDivisionError) as error:
+        raise RuntimeError(f"STORM returned a non-numeric result: {raw_values}") from error
+    stdout = completed.stdout
+    version_match = re.search(r"^Storm\s+([^\s]+)", stdout, re.MULTILINE)
+    return StormResult(
+        resolved,
+        properties,
+        values,
+        stdout,
+        version_match.group(1) if version_match else None,
+        exact,
+    )

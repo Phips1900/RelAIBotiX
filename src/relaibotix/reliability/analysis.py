@@ -13,7 +13,7 @@ import pandas as pd
 from relaibotix.behavioral.results import BehavioralResult
 
 from .config import RobotConfig
-from .dtmc import DTMCModel, DTMCSolution, solve_dtmc
+from .dtmc import DTMCModel, DTMCSolution, RepeatedRunMTTF, solve_dtmc, solve_repeated_run_mttf
 from .fault_tree import FaultTreeModel, bdd_probability, bottom_up_probability
 
 
@@ -24,6 +24,7 @@ class ReliabilityResult:
     skill_probabilities: pd.DataFrame
     dtmc: DTMCModel
     dtmc_solution: DTMCSolution
+    repeated_run_mttf: RepeatedRunMTTF
     exposure_assumptions: dict[str, object]
     failure_probability_source: str
     behavior_thresholds_verified: bool | None
@@ -58,6 +59,12 @@ class ReliabilityResult:
                     self.dtmc_solution.completion_without_modeled_failure_probability
                 ),
                 "expected_steps": self.dtmc_solution.expected_steps,
+            },
+            "repeated_run_mttf": {
+                "method": self.repeated_run_mttf.method,
+                "seconds": self.repeated_run_mttf.seconds,
+                "hours": self.repeated_run_mttf.hours,
+                "state_time_seconds": dict(self.repeated_run_mttf.state_time_seconds),
             },
         }
         destination.write_text(json.dumps(payload, indent=2) + "\n")
@@ -276,12 +283,19 @@ def analyze_reliability(
 
     skill_probabilities = pd.DataFrame(skill_rows)
     dtmc = _build_dtmc(behavior.segments, skill_probabilities)
+    dtmc_solution = solve_dtmc(dtmc)
+    state_time_seconds = {
+        f"skill_{int(row.skill_id)}": float(row.total_duration) / max(1, int(row.n_segments))
+        for row in behavior.skill_summary.itertuples(index=False)
+    }
+    repeated_run_mttf = solve_repeated_run_mttf(dtmc, state_time_seconds)
     return ReliabilityResult(
         component_failures=pd.DataFrame(component_rows),
         fault_trees=fault_trees,
         skill_probabilities=skill_probabilities,
         dtmc=dtmc,
-        dtmc_solution=solve_dtmc(dtmc),
+        dtmc_solution=dtmc_solution,
+        repeated_run_mttf=repeated_run_mttf,
         exposure_assumptions=assumptions.as_dict(),
         failure_probability_source=config.probability_source,
         behavior_thresholds_verified=thresholds_verified,
