@@ -6,6 +6,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import html
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import traceback
@@ -177,6 +178,23 @@ class MainWindow(QMainWindow):
         self.detector_box.currentIndexChanged.connect(self._detector_changed)
         form.addRow("Pretrained detector", self.detector_box)
 
+        self.legacy_predictions = QCheckBox(
+            "Use stored predictions (legacy paper reproduction only)"
+        )
+        self.legacy_predictions.toggled.connect(self._legacy_changed)
+        form.addRow("Legacy data", self.legacy_predictions)
+
+        self.checkpoint_root = QLineEdit(
+            os.environ.get("RELAIBOTIX_CHECKPOINT_ROOT", "artifacts/checkpoints")
+        )
+        root_row = QHBoxLayout()
+        root_row.addWidget(self.checkpoint_root)
+        self.checkpoint_root_button = QPushButton("Browse…")
+        self.checkpoint_root_button.setMaximumWidth(100)
+        self.checkpoint_root_button.clicked.connect(self._browse_checkpoint_root)
+        root_row.addWidget(self.checkpoint_root_button)
+        form.addRow("Checkpoint folder", root_row)
+
         self.checkpoint_path = QLineEdit()
         checkpoint_row = QHBoxLayout()
         checkpoint_row.addWidget(self.checkpoint_path)
@@ -265,14 +283,30 @@ class MainWindow(QMainWindow):
         self._detector_changed()
 
     def _detector_changed(self) -> None:
-        custom = self.detector_box.currentData() == "__custom__"
+        custom = (
+            self.detector_box.isEnabled()
+            and self.detector_box.currentData() == "__custom__"
+        )
         self.checkpoint_path.setEnabled(custom)
         self.checkpoint_button.setEnabled(custom)
+        self.checkpoint_root.setEnabled(self.detector_box.isEnabled() and not custom)
+        self.checkpoint_root_button.setEnabled(self.detector_box.isEnabled() and not custom)
 
     def _modality_changed(self) -> None:
-        needs_video = self.modality_box.currentText() in {"camera", "hybrid"}
+        needs_video = (
+            self.modality_box.isEnabled()
+            and self.modality_box.currentText() in {"camera", "hybrid"}
+        )
         self.video_path.setEnabled(needs_video)
         self.video_button.setEnabled(needs_video)
+
+    def _legacy_changed(self) -> None:
+        enabled = not self.legacy_predictions.isChecked()
+        self.detector_box.setEnabled(enabled)
+        self.modality_box.setEnabled(enabled)
+        self.device_box.setEnabled(enabled)
+        self._detector_changed()
+        self._modality_changed()
 
     def _selected_config(self) -> str:
         typed = self.config_box.currentText().strip()
@@ -309,15 +343,52 @@ class MainWindow(QMainWindow):
             "--output", self.output_path.text(), "--modality", self.modality_box.currentText(),
             "--device", self.device_box.currentText(),
         ]
+        legacy = self.legacy_predictions.isChecked()
         detector = self.detector_box.currentData()
-        if detector == "__custom__":
+        if legacy:
+            from relaibotix.data import inspect_h5
+
+            if not inspect_h5(self.input_path.text()).skill_labels:
+                QMessageBox.warning(
+                    self,
+                    "No stored predictions",
+                    "This HDF5 file does not contain detector predictions for legacy reproduction.",
+                )
+                return
+            arguments.append("--legacy-existing-predictions")
+        elif detector == "__custom__":
             checkpoint = self.checkpoint_path.text().strip()
             if not Path(checkpoint).is_file():
                 QMessageBox.warning(self, "Missing checkpoint", "Please select an existing checkpoint file.")
                 return
             arguments.extend(("--checkpoint", checkpoint))
-        elif detector:
-            arguments.extend(("--detector", str(detector)))
+        else:
+            try:
+                from relaibotix.skilldetector import (
+                    load_registry,
+                    resolve_checkpoint,
+                    select_detector,
+                )
+
+                selected = select_detector(
+                    load_registry(),
+                    self.input_path.text(),
+                    detector_id=str(detector) if detector else None,
+                    modality=None if self.modality_box.currentText() == "auto" else self.modality_box.currentText(),
+                )
+                resolve_checkpoint(selected, self.checkpoint_root.text())
+                arguments.extend((
+                    "--detector", selected.detector_id,
+                    "--checkpoint-root", self.checkpoint_root.text(),
+                ))
+            except Exception as error:
+                QMessageBox.warning(
+                    self,
+                    "No compatible detector",
+                    f"{error}\n\nFor an old paper dataset, enable legacy paper reproduction. "
+                    "New datasets require a compatible pretrained detector.",
+                )
+                return
         if self.sensitivity.isChecked():
             arguments.extend(("--sensitivity", str(self.sensitivity_factor.value())))
         if self.prism.isChecked():
@@ -415,6 +486,11 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "Select detector checkpoint")
         if path:
             self.checkpoint_path.setText(path)
+
+    def _browse_checkpoint_root(self) -> None:
+        path = QFileDialog.getExistingDirectory(self, "Select checkpoint folder")
+        if path:
+            self.checkpoint_root.setText(path)
 
     def _browse_video(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select aligned video folder")

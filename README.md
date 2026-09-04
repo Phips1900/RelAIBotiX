@@ -44,6 +44,11 @@ pipeline, optional exact PRISM/STORM verification, and a concise results overvie
 It invokes the same in-process workflow as the command-line interface; reliability
 calculations are not reimplemented in the GUI.
 
+Old paper recordings that already contain reviewed detector predictions can enable
+**Use stored predictions (legacy paper reproduction only)**. This option is explicit
+and disabled by default. New recordings must use a compatible registered detector
+or a supplied checkpoint.
+
 ## HDF5 input
 
 The canonical layout stores each episode independently:

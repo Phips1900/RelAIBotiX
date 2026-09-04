@@ -241,6 +241,32 @@ def test_run_command_executes_complete_pipeline(tmp_path, monkeypatch):
     assert (output_path / "reliability" / "sensitivity.csv").is_file()
 
 
+def test_run_command_can_reproduce_legacy_stored_predictions(tmp_path):
+    input_path = tmp_path / "legacy.h5"
+    config_path = tmp_path / "robot.json"
+    output_path = tmp_path / "run"
+    _write_valid_input(input_path)
+    with h5py.File(input_path, "r+") as h5_file:
+        h5_file.create_dataset("skills/predicted", data=np.asarray([0, 0, 1, 1]))
+    _write_robot_config(config_path)
+
+    assert main([
+        "run",
+        str(input_path),
+        "--config",
+        str(config_path),
+        "--output",
+        str(output_path),
+        "--legacy-existing-predictions",
+        "--sensitivity",
+    ]) == 0
+
+    assert not (output_path / "canonical.h5").exists()
+    assert not (output_path / "predicted.h5").exists()
+    assert (output_path / "behavior" / "behavior.json").is_file()
+    assert (output_path / "reliability" / "reliability.json").is_file()
+
+
 def test_reliability_command(tmp_path):
     behavior_path = tmp_path / "behavior.json"
     output_path = tmp_path / "reliability"

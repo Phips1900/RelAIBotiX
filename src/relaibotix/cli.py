@@ -535,6 +535,14 @@ def _pipeline_parser() -> argparse.ArgumentParser:
     parser.add_argument("--minimum-skill-frames", type=int, default=5)
     parser.add_argument("--target-stride", type=int, default=1)
     parser.add_argument(
+        "--legacy-existing-predictions",
+        action="store_true",
+        help=(
+            "Reproduce legacy experiments using predictions already stored in the HDF5 "
+            "file. New analyses must run skill inference."
+        ),
+    )
+    parser.add_argument(
         "--sensitivity",
         nargs="?",
         type=float,
@@ -556,48 +564,56 @@ def _run_pipeline(arguments: Sequence[str]) -> int:
 
     args.output.mkdir(parents=True, exist_ok=True)
     source = args.input
-    if inspect_h5(source).layout == "flat":
-        source = args.output / "canonical.h5"
-        if source.exists():
-            raise FileExistsError(f"Pipeline output already exists: {source}")
-        convert_h5(args.input, source)
-        print(f"Canonical input: {source}")
+    if args.legacy_existing_predictions:
+        if not inspect_h5(source).skill_labels:
+            raise ValueError(
+                "Legacy reproduction requires detector predictions already stored in the HDF5 file."
+            )
+        predicted = source
+        print("Legacy reproduction: using detector predictions already stored in the HDF5 file.")
+    else:
+        if inspect_h5(source).layout == "flat":
+            source = args.output / "canonical.h5"
+            if source.exists():
+                raise FileExistsError(f"Pipeline output already exists: {source}")
+            convert_h5(args.input, source)
+            print(f"Canonical input: {source}")
 
-    predicted = args.output / "predicted.h5"
-    if predicted.exists():
-        raise FileExistsError(f"Pipeline output already exists: {predicted}")
-    skill_arguments = [
-        "infer",
-        str(source),
-        "--output",
-        str(predicted),
-        "--modality",
-        args.modality,
-        "--batch-size",
-        str(args.batch_size),
-        "--num-workers",
-        str(args.num_workers),
-        "--device",
-        args.device,
-        "--minimum-skill-frames",
-        str(args.minimum_skill_frames),
-        "--target-stride",
-        str(args.target_stride),
-    ]
-    for option, value in (
-        ("--checkpoint", args.checkpoint),
-        ("--detector", args.detector),
-        ("--case-study", args.case_study),
-        ("--registry", args.registry),
-        ("--checkpoint-root", args.checkpoint_root),
-        ("--lerobot-root", args.lerobot_root),
-    ):
-        if value is not None:
-            skill_arguments.extend((option, str(value)))
-    _run_skills(skill_arguments)
+        predicted = args.output / "predicted.h5"
+        if predicted.exists():
+            raise FileExistsError(f"Pipeline output already exists: {predicted}")
+        skill_arguments = [
+            "infer",
+            str(source),
+            "--output",
+            str(predicted),
+            "--modality",
+            args.modality,
+            "--batch-size",
+            str(args.batch_size),
+            "--num-workers",
+            str(args.num_workers),
+            "--device",
+            args.device,
+            "--minimum-skill-frames",
+            str(args.minimum_skill_frames),
+            "--target-stride",
+            str(args.target_stride),
+        ]
+        for option, value in (
+            ("--checkpoint", args.checkpoint),
+            ("--detector", args.detector),
+            ("--case-study", args.case_study),
+            ("--registry", args.registry),
+            ("--checkpoint-root", args.checkpoint_root),
+            ("--lerobot-root", args.lerobot_root),
+        ):
+            if value is not None:
+                skill_arguments.extend((option, str(value)))
+        _run_skills(skill_arguments)
 
-    if not _print_validation(predicted, args.config):
-        raise RuntimeError("Detector output failed HDF5 validation.")
+        if not _print_validation(predicted, args.config):
+            raise RuntimeError("Detector output failed HDF5 validation.")
 
     behavior_directory = args.output / "behavior"
     _run_behavior([
