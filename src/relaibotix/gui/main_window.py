@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
-import html
 import io
-import json
 import os
 from pathlib import Path
 import sys
@@ -25,13 +23,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
-    QPlainTextEdit,
     QProgressBar,
     QPushButton,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
+
+from .results import ResultsView
 
 
 class _SignalWriter(io.TextIOBase):
@@ -78,7 +76,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("RelAIBotiX")
-        self.resize(1050, 760)
+        self.resize(1150, 850)
         self.thread_pool = QThreadPool.globalInstance()
         self._active_worker: _CommandWorker | None = None
         self._busy_buttons: list[QPushButton] = []
@@ -94,14 +92,26 @@ class MainWindow(QMainWindow):
 
         title = QLabel("RelAIBotiX")
         title.setFont(QFont(title.font().family(), 22, QFont.Weight.DemiBold))
+        header = QHBoxLayout()
+        header.addWidget(title)
+        header.addStretch()
+        self.setup_toggle = QPushButton("Hide setup")
+        self.setup_toggle.setCheckable(True)
+        self.setup_toggle.setChecked(True)
+        self.setup_toggle.toggled.connect(self._toggle_setup)
+        header.addWidget(self.setup_toggle)
         subtitle = QLabel("Behavioral and reliability analysis for robot learning policies")
         subtitle.setStyleSheet("color: #667085;")
-        root.addWidget(title)
+        root.addLayout(header)
         root.addWidget(subtitle)
 
-        root.addWidget(self._input_group())
-        root.addWidget(self._skill_group())
-        root.addWidget(self._analysis_group())
+        self.setup_container = QWidget()
+        setup = QVBoxLayout(self.setup_container)
+        setup.setContentsMargins(0, 0, 0, 0)
+        setup.setSpacing(12)
+        setup.addWidget(self._input_group())
+        setup.addWidget(self._skill_group())
+        setup.addWidget(self._analysis_group())
 
         actions = QHBoxLayout()
         self.validate_button = QPushButton("Validate HDF5")
@@ -113,31 +123,27 @@ class MainWindow(QMainWindow):
         actions.addStretch()
         actions.addWidget(self.validate_button)
         actions.addWidget(self.run_button)
-        root.addLayout(actions)
+        setup.addLayout(actions)
 
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
-        root.addWidget(self.progress)
+        setup.addWidget(self.progress)
+        root.addWidget(self.setup_container)
 
-        self.results = QTabWidget()
-        self.summary = QLabel("Validate an HDF5 file or run an analysis to begin.")
-        self.summary.setWordWrap(True)
-        self.summary.setAlignment(self.summary.alignment())
-        summary_page = QWidget()
-        summary_layout = QVBoxLayout(summary_page)
-        summary_layout.addWidget(self.summary)
-        summary_layout.addStretch()
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.results.addTab(summary_page, "Overview")
-        self.results.addTab(self.log, "Details")
+        self.results = ResultsView()
+        self.summary = self.results.summary
+        self.log = self.results.log
         root.addWidget(self.results, 1)
 
         open_output = QPushButton("Open output folder")
         open_output.clicked.connect(self._open_output)
         root.addWidget(open_output)
         self.setCentralWidget(central)
+
+    def _toggle_setup(self, visible: bool) -> None:
+        self.setup_container.setVisible(visible)
+        self.setup_toggle.setText("Hide setup" if visible else "Show setup")
 
     def _input_group(self) -> QGroupBox:
         group = QGroupBox("1. Input data")
@@ -406,7 +412,7 @@ class MainWindow(QMainWindow):
     def _start_worker(self, arguments: list[str], *, validation: bool) -> None:
         self.log.clear()
         self.summary.setText("Validation in progress…" if validation else "Analysis in progress…")
-        self.results.setCurrentIndex(1)
+        self.results.setCurrentWidget(self.log)
         self.progress.setRange(0, 0)
         for button in self._busy_buttons:
             button.setEnabled(False)
@@ -441,36 +447,20 @@ class MainWindow(QMainWindow):
             self.results.setCurrentIndex(0)
             return
         try:
-            reliability = json.loads(
-                (Path(self.output_path.text()) / "reliability" / "reliability.json").read_text()
-            )
-            behavior = json.loads(
-                (Path(self.output_path.text()) / "behavior" / "behavior.json").read_text()
-            )
-            runs = len({str(row["episode_key"]) for row in behavior["segments"]})
-            total_time = sum(float(row["duration"]) for row in behavior["segments"])
-            failure = float(reliability["dtmc"]["failure_probability"])
-            mttf = float(reliability["repeated_run_mttf"]["hours"])
-            self.summary.setText(
-                "<h3>Analysis complete</h3>"
-                f"<p><b>Runs:</b> {runs}<br>"
-                f"<b>Average time per run:</b> {total_time / runs:.2f} s<br>"
-                f"<b>Failure probability per run:</b> {failure:.4e}<br>"
-                f"<b>Repeated-operation MTTF:</b> {mttf:,.0f} h</p>"
-                "<p>Detailed CSV, JSON, PRISM, and STORM files are available in the output folder.</p>"
-            )
+            self.results.load_results(self.output_path.text())
         except Exception as error:
             self.summary.setText(
-                "<h3>Analysis complete</h3><p>Results were written, but the overview could not be loaded: "
-                + html.escape(str(error)) + "</p>"
+                "<h3>Analysis complete</h3><p>Results were written, but the dashboard "
+                f"could not be loaded: {error}</p>"
             )
+        self.setup_toggle.setChecked(False)
         self.results.setCurrentIndex(0)
 
     def _failed(self, detail: str) -> None:
         self._finish_busy()
         self.log.appendPlainText(detail)
         self.summary.setText("<h3>Operation failed</h3><p>Review Details for the cause.</p>")
-        self.results.setCurrentIndex(1)
+        self.results.setCurrentWidget(self.log)
 
     def _browse_input(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Select HDF5 file", "", "HDF5 files (*.h5 *.hdf5)")

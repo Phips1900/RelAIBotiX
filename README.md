@@ -44,6 +44,12 @@ pipeline, optional exact PRISM/STORM verification, and a concise results overvie
 It invokes the same in-process workflow as the command-line interface; reliability
 calculations are not reimplemented in the GUI.
 
+After a run, the window switches to a result dashboard containing cumulative
+traveled distance by component and physical unit, total duration by skill,
+per-skill failure probability, and the ranked component-sensitivity result. Plot
+toolbars provide zooming and export to publication-friendly image formats. The
+setup panel collapses automatically so the figures use the available window space.
+
 Old paper recordings that already contain reviewed detector predictions can enable
 **Use stored predictions (legacy paper reproduction only)**. This option is explicit
 and disabled by default. New recordings must use a compatible registered detector
