@@ -147,6 +147,17 @@ def test_existing_robot_config_defines_measured_components_and_redundancy():
     assert bottom_up_probability(tree) == pytest.approx(bdd_probability(tree).probability)
 
 
+def test_libero_config_matches_position_velocity_only_panda_logs():
+    config = load_robot_config("configs/robots/franka_libero.json")
+
+    assert config.robot_id == "franka_emika_panda_libero"
+    assert config.measured_component_count == 8
+    assert config.components["joint_1"].features["position"] == ("joint_pos_1",)
+    assert config.components["joint_1"].features["velocity"] == ("joint_vel_1",)
+    assert config.components["joint_1"].features["effort"] == ()
+    assert config.components["camera"].redundancy_copies == 1
+
+
 def test_hello_stretch_config_maps_logged_components():
     config = load_robot_config("configs/robots/hello_stretch.json")
 

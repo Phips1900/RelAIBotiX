@@ -194,8 +194,21 @@ class BehavioralAnalyzer:
             episode_id = int(episodes[start])
             skill_id = int(labels[start])
             skill = names.get(skill_id, str(skill_id))
-            segment_times = times[start : end + 1]
-            duration = float(segment_times[-1] - segment_times[0]) if end > start else 0.0
+            # Labels use a left-endpoint convention: the label at sample i owns
+            # the interval [t_i, t_i+1). Include the first sample of the next
+            # skill as an endpoint so no time or motion is lost at a boundary.
+            interval_end = (
+                end + 1
+                if end + 1 < len(values) and episodes[end + 1] == episodes[end]
+                else end
+            )
+            segment_times = times[start : interval_end + 1]
+            segment_values = values[start : interval_end + 1]
+            duration = (
+                float(segment_times[-1] - segment_times[0])
+                if segment_times.size > 1
+                else 0.0
+            )
             segment = {
                 "episode_id": episode_id,
                 "episode_key": str(keys[start]),
@@ -212,12 +225,12 @@ class BehavioralAnalyzer:
             segment_rows.append(segment)
             for joint, columns in joints.items():
                 joint_rows.append(
-                    self._joint_metrics(values[start : end + 1], segment_times, columns, joint, segment)
+                    self._joint_metrics(segment_values, segment_times, columns, joint, segment)
                 )
             if base_columns:
                 base_rows.append(
                     self._base_metrics(
-                        values[start : end + 1], segment_times, base_columns, segment
+                        segment_values, segment_times, base_columns, segment
                     )
                 )
 
@@ -236,6 +249,7 @@ class BehavioralAnalyzer:
                 "measurement_mapping": (
                     "robot_config" if self.component_features is not None else "feature_names"
                 ),
+                "interval_attribution": "left_endpoint",
             },
         )
 
@@ -263,13 +277,17 @@ class BehavioralAnalyzer:
             wrapped = np.arctan2(np.sin(delta_yaw), np.cos(delta_yaw))
             rotation_distance = float(np.sum(np.abs(wrapped[np.isfinite(wrapped)])))
 
+        owned_samples = int(segment["samples"])
         linear_speed = None
         if "vx" in columns and "vy" in columns:
             linear_speed = np.hypot(
-                features[:, columns["vx"]], features[:, columns["vy"]]
+                features[:owned_samples, columns["vx"]],
+                features[:owned_samples, columns["vy"]],
             )
         angular_speed = (
-            np.abs(features[:, columns["wz"]]) if "wz" in columns else None
+            np.abs(features[:owned_samples, columns["wz"]])
+            if "wz" in columns
+            else None
         )
         return {
             "episode_id": segment["episode_id"],
@@ -477,6 +495,7 @@ class BehavioralAnalyzer:
                 position_matrix = position_matrix[:, np.newaxis]
         velocity, velocity_axes = signal_values("vel")
         effort, effort_axes = signal_values("effort")
+        owned_samples = int(segment["samples"])
         dt = np.diff(timestamps)
         if np.any(dt < 0.0):
             raise ValueError(f"Timestamps decrease inside episode {segment['episode_id']}.")
@@ -524,15 +543,15 @@ class BehavioralAnalyzer:
             "end_position": end_position,
             "position_range": position_range,
             "traveled_distance": traveled_distance,
-            "mean_abs_velocity": _finite_stat(np.abs(velocity), np.mean) if velocity is not None else float("nan"),
-            "rms_velocity": _finite_stat(velocity, lambda value: np.sqrt(np.mean(value ** 2))) if velocity is not None else float("nan"),
-            "max_abs_velocity": _finite_stat(np.abs(velocity), np.max) if velocity is not None else float("nan"),
+            "mean_abs_velocity": _finite_stat(np.abs(velocity[:owned_samples]), np.mean) if velocity is not None else float("nan"),
+            "rms_velocity": _finite_stat(velocity[:owned_samples], lambda value: np.sqrt(np.mean(value ** 2))) if velocity is not None else float("nan"),
+            "max_abs_velocity": _finite_stat(np.abs(velocity[:owned_samples]), np.max) if velocity is not None else float("nan"),
             "velocity_time_low": vel_low,
             "velocity_time_medium": vel_medium,
             "velocity_time_high": vel_high,
-            "mean_abs_effort": _finite_stat(np.abs(effort), np.mean) if effort is not None else float("nan"),
-            "rms_effort": _finite_stat(effort, lambda value: np.sqrt(np.mean(value ** 2))) if effort is not None else float("nan"),
-            "max_abs_effort": _finite_stat(np.abs(effort), np.max) if effort is not None else float("nan"),
+            "mean_abs_effort": _finite_stat(np.abs(effort[:owned_samples]), np.mean) if effort is not None else float("nan"),
+            "rms_effort": _finite_stat(effort[:owned_samples], lambda value: np.sqrt(np.mean(value ** 2))) if effort is not None else float("nan"),
+            "max_abs_effort": _finite_stat(np.abs(effort[:owned_samples]), np.max) if effort is not None else float("nan"),
             "effort_time_low": effort_low,
             "effort_time_medium": effort_medium,
             "effort_time_high": effort_high,

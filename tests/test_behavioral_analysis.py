@@ -46,6 +46,21 @@ def test_analysis_uses_explicit_episode_and_skill_boundaries():
     assert "success" not in result.segments.columns
 
 
+def test_skill_boundaries_preserve_all_episode_time_and_motion():
+    features = np.array([[0.0], [1.0], [3.0], [6.0]])
+    result = BehavioralAnalyzer().analyze(
+        features=features,
+        feature_names=["joint_pos_1"],
+        skill_labels=np.array([0, 0, 1, 1]),
+        timestamps=np.array([0.0, 1.0, 2.0, 3.0]),
+        episode_ids=np.array([0, 0, 0, 0]),
+    )
+
+    assert result.segments["duration"].sum() == pytest.approx(3.0)
+    assert result.joint_metrics["traveled_distance"].sum() == pytest.approx(6.0)
+    assert result.metadata["interval_attribution"] == "left_endpoint"
+
+
 def test_analysis_reports_numbered_and_named_joint_distance():
     features, labels, timestamps, episodes = sample_data()
     result = BehavioralAnalyzer().analyze(

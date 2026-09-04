@@ -1,0 +1,103 @@
+{
+  "schema_version": "1.0",
+  "robot": {
+    "id": "franka_emika_panda_libero",
+    "name": "Franka Emika Panda (LIBERO)",
+    "type": "simulated_fixed_manipulator"
+  },
+  "failure_probability_basis": "per_minute",
+  "failure_probability_source": "legacy_values_require_expert_review",
+  "exposure_assumptions": {
+    "source": "example_assumption_set_requires_expert_review",
+    "position_step": 0.001,
+    "velocity_active": 0.03,
+    "effort_active": 0.1,
+    "velocity_bands": [0.5, 1.0],
+    "effort_bands": [0.2, 0.6],
+    "velocity_multipliers": [1.0, 1.5, 2.0],
+    "effort_multipliers": [1.0, 1.5, 2.0],
+    "distance_multipliers": [1.0, 1.5, 2.0]
+  },
+  "components": {
+    "joint_1": {
+      "type": "revolute_joint",
+      "features": {"position": "joint_pos_1", "velocity": "joint_vel_1", "effort": null},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"},
+      "distance_thresholds": [0.5, 1.0],
+      "distance_unit": "radian"
+    },
+    "joint_2": {
+      "type": "revolute_joint",
+      "features": {"position": "joint_pos_2", "velocity": "joint_vel_2", "effort": null},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"},
+      "distance_thresholds": [0.5, 1.0],
+      "distance_unit": "radian"
+    },
+    "joint_3": {
+      "type": "revolute_joint",
+      "features": {"position": "joint_pos_3", "velocity": "joint_vel_3", "effort": null},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"},
+      "distance_thresholds": [0.5, 1.0],
+      "distance_unit": "radian"
+    },
+    "joint_4": {
+      "type": "revolute_joint",
+      "features": {"position": "joint_pos_4", "velocity": "joint_vel_4", "effort": null},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"},
+      "distance_thresholds": [0.5, 1.0],
+      "distance_unit": "radian"
+    },
+    "joint_5": {
+      "type": "revolute_joint",
+      "features": {"position": "joint_pos_5", "velocity": "joint_vel_5", "effort": null},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"},
+      "distance_thresholds": [0.5, 1.0],
+      "distance_unit": "radian"
+    },
+    "joint_6": {
+      "type": "revolute_joint",
+      "features": {"position": "joint_pos_6", "velocity": "joint_vel_6", "effort": null},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"},
+      "distance_thresholds": [0.5, 1.0],
+      "distance_unit": "radian"
+    },
+    "joint_7": {
+      "type": "revolute_joint",
+      "features": {"position": "joint_pos_7", "velocity": "joint_vel_7", "effort": null},
+      "failure_probability": 3.577e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"},
+      "distance_thresholds": [0.5, 1.0],
+      "distance_unit": "radian"
+    },
+    "gripper": {
+      "type": "gripper",
+      "features": {"position": "gripper_state"},
+      "failure_probability": 7.344e-8,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    },
+    "controller": {
+      "type": "controller",
+      "always_active": true,
+      "failure_probability": 2.167e-10,
+      "redundancy": {"copies": 2, "mode": "parallel"}
+    },
+    "power_supply": {
+      "type": "power_supply",
+      "always_active": true,
+      "failure_probability": 6.674e-8,
+      "redundancy": {"copies": 2, "mode": "parallel"}
+    },
+    "camera": {
+      "type": "camera",
+      "always_active": true,
+      "failure_probability": 1.029e-9,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    }
+  }
+}
