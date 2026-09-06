@@ -49,6 +49,9 @@ traveled distance by component and physical unit, total duration by skill,
 per-skill failure probability, and the ranked component-sensitivity result. Plot
 toolbars provide zooming and export to publication-friendly image formats. The
 setup panel collapses automatically so the figures use the available window space.
+Additional behavioral views show stacked low/medium/high velocity and effort
+exposure and an episode-selectable skill timeline. Sortable tables expose the skill,
+component, reliability, and sensitivity values behind every visualization.
 
 Old paper recordings that already contain reviewed detector predictions can enable
 **Use stored predictions (legacy paper reproduction only)**. This option is explicit
