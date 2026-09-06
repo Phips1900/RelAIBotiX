@@ -324,6 +324,17 @@ def test_experiments_command_writes_publication_outputs(tmp_path):
             "scope": "included",
             "skill_names": {"0": "Move", "1": "Place"},
             "label_source": "existing_detector_predictions",
+        }, {
+            "id": "optional_policy",
+            "setting": "CS-optional",
+            "platform": "Test Robot",
+            "task": "optional task",
+            "policy": "optional policy",
+            "input_h5": "input.h5",
+            "robot_config": "robot.json",
+            "scope": "optional",
+            "skill_names": {"0": "Move", "1": "Place"},
+            "label_source": "existing_detector_predictions",
         }],
     }))
 
@@ -333,12 +344,14 @@ def test_experiments_command_writes_publication_outputs(tmp_path):
         str(manifest_path),
         "--output",
         str(output_path),
+        "--exclude-optional",
     ]) == 0
 
     experiment = output_path / "test_policy"
     assert (experiment / "behavior" / "behavior.json").is_file()
     assert (experiment / "reliability" / "reliability.json").is_file()
     assert (experiment / "reliability" / "sensitivity.csv").is_file()
+    assert not (output_path / "optional_policy").exists()
     for filename in (
         "paper_results.csv",
         "paper_results.md",
@@ -351,6 +364,7 @@ def test_experiments_command_writes_publication_outputs(tmp_path):
     provenance = json.loads((output_path / "provenance.json").read_text())
     assert provenance["solvers"]["internal"]["enabled"] is True
     assert provenance["experiments"][0]["input_sha256"]
+    assert len(provenance["experiments"]) == 1
 
 
 def test_gui_command_dispatches_without_importing_qt(monkeypatch):

@@ -25,10 +25,12 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from .batch import BatchPage
 from .results import ResultsView
 
 
@@ -105,6 +107,11 @@ class MainWindow(QMainWindow):
         root.addLayout(header)
         root.addWidget(subtitle)
 
+        single_page = QWidget()
+        single = QVBoxLayout(single_page)
+        single.setContentsMargins(8, 8, 8, 8)
+        single.setSpacing(12)
+
         self.setup_container = QWidget()
         setup = QVBoxLayout(self.setup_container)
         setup.setContentsMargins(0, 0, 0, 0)
@@ -129,17 +136,28 @@ class MainWindow(QMainWindow):
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
         setup.addWidget(self.progress)
-        root.addWidget(self.setup_container)
+        single.addWidget(self.setup_container)
 
         self.results = ResultsView()
         self.summary = self.results.summary
         self.log = self.results.log
-        root.addWidget(self.results, 1)
+        single.addWidget(self.results, 1)
 
         open_output = QPushButton("Open output folder")
         open_output.clicked.connect(self._open_output)
-        root.addWidget(open_output)
+        single.addWidget(open_output)
+
+        self.batch_page = BatchPage()
+        self.batch_page.run_requested.connect(self._start_batch_worker)
+        self.workspace = QTabWidget()
+        self.workspace.addTab(single_page, "Single analysis")
+        self.workspace.addTab(self.batch_page, "Experiment batch")
+        self.workspace.currentChanged.connect(self._workspace_changed)
+        root.addWidget(self.workspace, 1)
         self.setCentralWidget(central)
+
+    def _workspace_changed(self, index: int) -> None:
+        self.setup_toggle.setVisible(index == 0)
 
     def _toggle_setup(self, visible: bool) -> None:
         self.setup_container.setVisible(visible)
@@ -416,6 +434,7 @@ class MainWindow(QMainWindow):
         self.progress.setRange(0, 0)
         for button in self._busy_buttons:
             button.setEnabled(False)
+        self.batch_page.run_button.setEnabled(False)
         worker = _CommandWorker(arguments)
         worker.signals.log.connect(self.log.appendPlainText)
         worker.signals.failed.connect(self._failed)
@@ -430,7 +449,34 @@ class MainWindow(QMainWindow):
         self.progress.setValue(1)
         for button in self._busy_buttons:
             button.setEnabled(True)
+        self.batch_page.run_button.setEnabled(True)
         self._active_worker = None
+
+    def _start_batch_worker(self, arguments: list[str]) -> None:
+        if self._active_worker is not None:
+            self.batch_page.set_running(False)
+            QMessageBox.warning(self, "Analysis running", "Wait for the current operation to finish.")
+            return
+        for button in self._busy_buttons:
+            button.setEnabled(False)
+        worker = _CommandWorker(arguments)
+        worker.signals.log.connect(self.batch_page.append_log)
+        worker.signals.failed.connect(self._batch_failed)
+        worker.signals.finished.connect(self._batch_finished)
+        self._active_worker = worker
+        self.thread_pool.start(worker)
+
+    def _batch_finished(self, exit_code: int) -> None:
+        for button in self._busy_buttons:
+            button.setEnabled(True)
+        self._active_worker = None
+        self.batch_page.finished(exit_code)
+
+    def _batch_failed(self, detail: str) -> None:
+        for button in self._busy_buttons:
+            button.setEnabled(True)
+        self._active_worker = None
+        self.batch_page.failed(detail)
 
     def _validation_finished(self, exit_code: int) -> None:
         self._finish_busy()

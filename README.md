@@ -53,6 +53,12 @@ Additional behavioral views show stacked low/medium/high velocity and effort
 exposure and an episode-selectable skill timeline. Sortable tables expose the skill,
 component, reliability, and sensitivity values behind every visualization.
 
+The **Experiment batch** workspace runs a complete publication manifest, can exclude
+entries marked optional, and optionally verifies every generated model with exact
+PRISM and STORM. It presents a combined sortable paper table plus policy-comparison
+plots for failure probability and repeated-operation MTTF. The generated CSV,
+Markdown, LaTeX, and provenance files remain the authoritative export artifacts.
+
 Old paper recordings that already contain reviewed detector predictions can enable
 **Use stored predictions (legacy paper reproduction only)**. This option is explicit
 and disabled by default. New recordings must use a compatible registered detector

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 import math
 from pathlib import Path
@@ -410,6 +411,11 @@ def _experiments_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--storm", action="store_true")
     run_parser.add_argument("--storm-executable", default="storm")
     run_parser.add_argument("--approximate-solvers", action="store_true")
+    run_parser.add_argument(
+        "--exclude-optional",
+        action="store_true",
+        help="Skip experiments whose manifest scope is 'optional'.",
+    )
     return parser
 
 
@@ -423,6 +429,17 @@ def _run_experiments(arguments: Sequence[str]) -> int:
 
     args = _experiments_parser().parse_args(arguments)
     manifest = load_experiment_manifest(args.manifest)
+    if args.exclude_optional:
+        manifest = replace(
+            manifest,
+            experiments=tuple(
+                experiment
+                for experiment in manifest.experiments
+                if experiment.scope != "optional"
+            ),
+        )
+        if not manifest.experiments:
+            raise ValueError("The manifest contains no non-optional experiments.")
     args.output.mkdir(parents=True, exist_ok=True)
     print(
         "Publication regression: using detector predictions already stored in the "
