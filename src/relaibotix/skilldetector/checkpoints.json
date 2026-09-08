@@ -92,6 +92,7 @@
       "checkpoint": "franka-bottle-transformer-position-calibrated-v2/best.pt",
       "feature_schema": "franka_position_v1",
       "minimum_skill_frames": 10,
+      "transition_profile": "franka-manipulation",
       "recommended": true
     },
     "franka-sim-sorting-transformer": {
@@ -101,6 +102,7 @@
       "checkpoint": "franka-sorting-transformer-position-calibrated/best.pt",
       "feature_schema": "franka_position_v1",
       "minimum_skill_frames": 5,
+      "transition_profile": "franka-manipulation",
       "recommended": true
     },
     "franka-sim-r3d18-frontview": {

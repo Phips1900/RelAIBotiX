@@ -64,6 +64,22 @@ def test_valid_unlabeled_multi_episode_layout(tmp_path):
     assert [warning.code for warning in report.warnings] == ["skills.not_run"]
 
 
+def test_multi_episode_layout_does_not_require_redundant_episode_index(tmp_path):
+    path = tmp_path / "canonical.h5"
+    with h5py.File(path, "w") as h5_file:
+        data = h5_file.create_group("data")
+        demo = data.create_group("demo_000000")
+        features = demo.create_dataset("features", data=np.ones((4, 2)))
+        _feature_names(features, ["joint_pos_1", "joint_vel_1"])
+        demo.create_dataset("timestamps/sim", data=[0.0, 0.1, 0.2, 0.3])
+        demo.create_dataset("labels/skill_id", data=[1, 1, 2, 2])
+
+    report = validate_h5(path)
+
+    assert report.valid
+    assert not any(issue.code == "episode.dataset_missing" for issue in report.issues)
+
+
 def test_convert_flat_preserves_old_predictions_as_source_data(tmp_path):
     source = tmp_path / "legacy.h5"
     output = tmp_path / "canonical.h5"

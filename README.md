@@ -72,7 +72,7 @@ The canonical layout stores each episode independently:
 /data/demo_XXXXXX/
 ├── features
 ├── timestamps/sim
-├── episode/index
+├── episode/index  # optional; retained for source alignment when available
 └── labels/skill_id
 ```
 
@@ -147,8 +147,9 @@ relaibotix skills infer canonical.h5 \
 ```
 
 The task-specific checkpoints retain their calibrated post-processing defaults:
-10 minimum frames for the bottle task and 5 for sorting. A different model can
-be selected explicitly:
+10 minimum frames for the bottle task and 5 for sorting. Both also use the
+calibrated Franka manipulation transition constraints. A different model can be
+selected explicitly:
 
 ```bash
 relaibotix skills infer canonical.h5 \

@@ -21,6 +21,7 @@ class DetectorSpec:
     required_features: tuple[str, ...]
     task: str | None = None
     minimum_skill_frames: int = 5
+    transition_profile: str = "none"
     recommended: bool = False
 
 
@@ -76,6 +77,7 @@ def load_registry(path: str | Path | None = None) -> DetectorRegistry:
             required_features=tuple(features),
             task=str(definition["task"]) if definition.get("task") is not None else None,
             minimum_skill_frames=int(definition.get("minimum_skill_frames", 5)),
+            transition_profile=str(definition.get("transition_profile", "none")),
             recommended=bool(definition.get("recommended", False)),
         )
         if detectors[str(detector_id)].minimum_skill_frames < 1:

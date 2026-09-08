@@ -266,7 +266,7 @@ def _validate_multi_episode(h5_file: h5py.File, issues: list[ValidationIssue]) -
             expected_names = names
         sample_count = int(features.shape[0]) if features.ndim else 0
 
-        required = ("timestamps/sim", "episode/index")
+        required = ("timestamps/sim",)
         for relative_path in required:
             dataset = demo.get(relative_path)
             if not isinstance(dataset, h5py.Dataset):
@@ -285,6 +285,18 @@ def _validate_multi_episode(h5_file: h5py.File, issues: list[ValidationIssue]) -
                     f"'{relative_path}' must have shape ({sample_count},).",
                     f"/data/{demo_name}/{relative_path}",
                 )
+
+        episode_index = demo.get("episode/index")
+        if isinstance(episode_index, h5py.Dataset) and (
+            episode_index.ndim != 1 or episode_index.shape[0] != sample_count
+        ):
+            _issue(
+                issues,
+                "error",
+                "episode.dataset_shape",
+                f"'episode/index' must have shape ({sample_count},) when present.",
+                f"/data/{demo_name}/episode/index",
+            )
 
         timestamps = demo.get("timestamps/sim")
         if (

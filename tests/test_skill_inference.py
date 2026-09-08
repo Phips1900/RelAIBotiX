@@ -41,6 +41,7 @@ def _install_fake_detector(monkeypatch):
         workers,
         device,
         minimum_frames,
+        transition_profile="none",
     ):
         shutil.copy2(input_path, output_path)
         with h5py.File(output_path, "r+") as output:
@@ -194,6 +195,7 @@ def test_task_selects_calibrated_franka_detector(tmp_path):
 
     assert selected.detector_id == "franka-sim-bottle-transformer"
     assert selected.minimum_skill_frames == 10
+    assert selected.transition_profile == "franka-manipulation"
 
 
 def test_franka_task_specific_detectors_are_not_guessed_from_same_schema(tmp_path):

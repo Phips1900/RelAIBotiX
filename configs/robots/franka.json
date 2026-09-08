@@ -21,7 +21,7 @@
   "components": {
     "joint_1": {
       "type": "revolute_joint",
-      "features": {"position": "joint_pos_1", "velocity": "joint_vel_1", "effort": "joint_effort_1"},
+      "features": {"position": "joint_pos_1", "velocity": "joint_vel_1", "effort": "joint_torque_1"},
       "failure_probability": 3.577e-8,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.5, 1.0],
@@ -29,7 +29,7 @@
     },
     "joint_2": {
       "type": "revolute_joint",
-      "features": {"position": "joint_pos_2", "velocity": "joint_vel_2", "effort": "joint_effort_2"},
+      "features": {"position": "joint_pos_2", "velocity": "joint_vel_2", "effort": "joint_torque_2"},
       "failure_probability": 3.577e-8,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.5, 1.0],
@@ -37,7 +37,7 @@
     },
     "joint_3": {
       "type": "revolute_joint",
-      "features": {"position": "joint_pos_3", "velocity": "joint_vel_3", "effort": "joint_effort_3"},
+      "features": {"position": "joint_pos_3", "velocity": "joint_vel_3", "effort": "joint_torque_3"},
       "failure_probability": 3.577e-8,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.5, 1.0],
@@ -45,7 +45,7 @@
     },
     "joint_4": {
       "type": "revolute_joint",
-      "features": {"position": "joint_pos_4", "velocity": "joint_vel_4", "effort": "joint_effort_4"},
+      "features": {"position": "joint_pos_4", "velocity": "joint_vel_4", "effort": "joint_torque_4"},
       "failure_probability": 3.577e-8,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.5, 1.0],
@@ -53,7 +53,7 @@
     },
     "joint_5": {
       "type": "revolute_joint",
-      "features": {"position": "joint_pos_5", "velocity": "joint_vel_5", "effort": "joint_effort_5"},
+      "features": {"position": "joint_pos_5", "velocity": "joint_vel_5", "effort": "joint_torque_5"},
       "failure_probability": 3.577e-8,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.5, 1.0],
@@ -61,7 +61,7 @@
     },
     "joint_6": {
       "type": "revolute_joint",
-      "features": {"position": "joint_pos_6", "velocity": "joint_vel_6", "effort": "joint_effort_6"},
+      "features": {"position": "joint_pos_6", "velocity": "joint_vel_6", "effort": "joint_torque_6"},
       "failure_probability": 3.577e-8,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.5, 1.0],
@@ -69,7 +69,7 @@
     },
     "joint_7": {
       "type": "revolute_joint",
-      "features": {"position": "joint_pos_7", "velocity": "joint_vel_7", "effort": "joint_effort_7"},
+      "features": {"position": "joint_pos_7", "velocity": "joint_vel_7", "effort": "joint_torque_7"},
       "failure_probability": 3.577e-8,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.5, 1.0],

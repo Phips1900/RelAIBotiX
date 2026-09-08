@@ -271,6 +271,7 @@ def _run_skills(arguments: Sequence[str]) -> int:
         num_workers=args.num_workers,
         device=args.device,
         minimum_skill_frames=minimum_skill_frames,
+        transition_profile=detector.transition_profile if detector is not None else "none",
         target_stride=args.target_stride,
     )
     print(
