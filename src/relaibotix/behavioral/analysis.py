@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 import re
@@ -385,6 +385,8 @@ class BehavioralAnalyzer:
         labels: list[np.ndarray] = []
         episode_ids: list[np.ndarray] = []
         episode_keys: list[np.ndarray] = []
+        excluded_invalid_samples = 0
+        analysis_episode_index = 0
         reference_names: tuple[str, ...] | None = None
         detected_skill_names: dict[int, str] = {}
         prediction_paths = (
@@ -397,7 +399,7 @@ class BehavioralAnalyzer:
             )
         )
 
-        for episode_index, episode_name in enumerate(episode_names):
+        for episode_name in episode_names:
             episode = data[episode_name]
             feature_dataset = episode["features"]
             names = decode_feature_names(feature_dataset)
@@ -418,6 +420,15 @@ class BehavioralAnalyzer:
             if episode_times.size != sample_count or episode_labels.size != sample_count:
                 raise ValueError(f"/data/{episode_name} features, timestamps, and labels are not aligned.")
 
+            validity = (
+                np.asarray(episode["validity/valid"], dtype=bool).reshape(-1)
+                if "validity/valid" in episode
+                else np.ones(sample_count, dtype=bool)
+            )
+            if validity.size != sample_count:
+                raise ValueError(f"/data/{episode_name}/validity/valid is not aligned with features.")
+            excluded_invalid_samples += int(np.count_nonzero(~validity))
+
             label_dataset = episode[label_path]
             class_ids = label_dataset.attrs.get("class_skill_ids")
             class_names_json = label_dataset.attrs.get("class_names_json")
@@ -429,14 +440,27 @@ class BehavioralAnalyzer:
                     {int(skill_id): str(name) for skill_id, name in zip(class_ids, class_names)}
                 )
 
-            features.append(episode_features)
-            timestamps.append(episode_times)
-            labels.append(episode_labels)
-            episode_ids.append(np.full(sample_count, episode_index, dtype=np.int64))
-            episode_keys.append(np.full(sample_count, episode_name, dtype=object))
+            starts = np.flatnonzero(validity & ~np.r_[False, validity[:-1]])
+            ends = np.flatnonzero(validity & ~np.r_[validity[1:], False]) + 1
+            for region_index, (start, end) in enumerate(zip(starts, ends, strict=True)):
+                region_key = (
+                    episode_name
+                    if len(starts) == 1
+                    else f"{episode_name}:valid_{region_index:03d}"
+                )
+                features.append(episode_features[start:end])
+                timestamps.append(episode_times[start:end])
+                labels.append(episode_labels[start:end])
+                episode_ids.append(
+                    np.full(end - start, analysis_episode_index, dtype=np.int64)
+                )
+                episode_keys.append(np.full(end - start, region_key, dtype=object))
+                analysis_episode_index += 1
 
         assert reference_names is not None
-        return self.analyze(
+        if not features:
+            raise ValueError("Canonical HDF5 input contains no valid samples to analyze.")
+        result = self.analyze(
             features=np.concatenate(features),
             feature_names=reference_names,
             skill_labels=np.concatenate(labels),
@@ -444,6 +468,14 @@ class BehavioralAnalyzer:
             episode_ids=np.concatenate(episode_ids),
             episode_keys=np.concatenate(episode_keys),
             skill_names=detected_skill_names,
+        )
+        return replace(
+            result,
+            metadata={
+                **result.metadata,
+                "validity_policy": "exclude_explicitly_invalid_samples",
+                "excluded_invalid_samples": excluded_invalid_samples,
+            },
         )
 
     @staticmethod

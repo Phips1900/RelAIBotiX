@@ -73,6 +73,7 @@ The canonical layout stores each episode independently:
 ├── features
 ├── timestamps/sim
 ├── episode/index  # optional; retained for source alignment when available
+├── validity/valid # optional; false samples are excluded from behavioral exposure
 └── labels/skill_id
 ```
 

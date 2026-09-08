@@ -80,6 +80,22 @@ def test_multi_episode_layout_does_not_require_redundant_episode_index(tmp_path)
     assert not any(issue.code == "episode.dataset_missing" for issue in report.issues)
 
 
+def test_validation_ignores_unknown_labels_on_explicitly_invalid_samples(tmp_path):
+    path = tmp_path / "interrupted.h5"
+    with h5py.File(path, "w") as h5_file:
+        episode = h5_file.create_group("data/demo_000000")
+        features = episode.create_dataset("features", data=np.ones((4, 1)))
+        _feature_names(features, ["joint_pos_1"])
+        episode.create_dataset("timestamps/sim", data=[0.0, 0.1, 0.2, 0.3])
+        episode.create_dataset("labels/filtered_skill_id", data=[1, 2, -1, -1])
+        episode.create_dataset("validity/valid", data=[True, True, False, False])
+
+    report = validate_h5(path)
+
+    assert report.valid
+    assert not any(issue.code == "skills.unknown" for issue in report.issues)
+
+
 def test_convert_flat_preserves_old_predictions_as_source_data(tmp_path):
     source = tmp_path / "legacy.h5"
     output = tmp_path / "canonical.h5"

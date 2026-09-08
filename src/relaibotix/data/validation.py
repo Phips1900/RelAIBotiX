@@ -306,6 +306,20 @@ def _validate_multi_episode(h5_file: h5py.File, issues: list[ValidationIssue]) -
         ):
             _validate_timestamps(timestamps, issues, f"/data/{demo_name}/timestamps/sim")
 
+        validity = demo.get("validity/valid")
+        valid_mask: np.ndarray | None = None
+        if isinstance(validity, h5py.Dataset):
+            if validity.ndim != 1 or validity.shape[0] != sample_count:
+                _issue(
+                    issues,
+                    "error",
+                    "validity.shape",
+                    f"'validity/valid' must have shape ({sample_count},).",
+                    f"/data/{demo_name}/validity/valid",
+                )
+            else:
+                valid_mask = np.asarray(validity, dtype=bool)
+
         skill_ids = next(
             (
                 demo.get(path)
@@ -328,7 +342,10 @@ def _validate_multi_episode(h5_file: h5py.File, issues: list[ValidationIssue]) -
                     f"/data/{demo_name}/labels/skill_id",
                 )
             else:
-                skill_values.update(int(value) for value in np.unique(skill_ids[:]))
+                values = np.asarray(skill_ids[:])
+                if valid_mask is not None:
+                    values = values[valid_mask]
+                skill_values.update(int(value) for value in np.unique(values))
 
     if not skill_values or skill_values == {-1}:
         _issue(

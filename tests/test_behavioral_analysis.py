@@ -240,3 +240,36 @@ def test_analyze_grouped_detector_output_uses_filtered_labels_and_taxonomy(tmp_p
         {"episode_key": "demo_000001", "skill_id": 1, "skill": "move"},
     ]
     assert result.skill_summary.iloc[0]["n_episodes"] == 2
+
+
+def test_grouped_analysis_excludes_explicitly_invalid_unknown_tail(tmp_path):
+    input_path = tmp_path / "predicted.h5"
+    with h5py.File(input_path, "w") as output:
+        episode = output.create_group("data/demo_000000")
+        features = episode.create_dataset(
+            "features", data=np.array([[0.0], [1.0], [2.0], [99.0], [99.0]])
+        )
+        features.attrs["feature_names"] = ["joint_pos_1"]
+        episode.create_dataset("timestamps/sim", data=[0.0, 1.0, 2.0, 3.0, 4.0])
+        episode.create_dataset("labels/filtered_skill_id", data=[1, 1, 1, -1, -1])
+        episode.create_dataset("validity/valid", data=[True, True, True, False, False])
+
+    result = BehavioralAnalyzer().analyze_h5(input_path)
+
+    assert result.segments["duration"].sum() == pytest.approx(2.0)
+    assert result.joint_metrics["traveled_distance"].sum() == pytest.approx(2.0)
+    assert result.metadata["excluded_invalid_samples"] == 2
+
+
+def test_grouped_analysis_still_rejects_unknown_label_in_valid_region(tmp_path):
+    input_path = tmp_path / "predicted.h5"
+    with h5py.File(input_path, "w") as output:
+        episode = output.create_group("data/demo_000000")
+        features = episode.create_dataset("features", data=np.ones((3, 1)))
+        features.attrs["feature_names"] = ["joint_pos_1"]
+        episode.create_dataset("timestamps/sim", data=[0.0, 1.0, 2.0])
+        episode.create_dataset("labels/filtered_skill_id", data=[1, -1, 1])
+        episode.create_dataset("validity/valid", data=[True, True, False])
+
+    with pytest.raises(ValueError, match="detector-produced"):
+        BehavioralAnalyzer().analyze_h5(input_path)
