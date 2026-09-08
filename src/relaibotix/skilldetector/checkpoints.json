@@ -39,6 +39,10 @@
       "joint_torque_1", "joint_torque_2", "joint_torque_3",
       "joint_torque_4", "joint_torque_5", "joint_torque_6",
       "joint_torque_7", "gripper_state", "gripper_torque"
+    ],
+    "franka_position_v1": [
+      "joint_pos_1", "joint_pos_2", "joint_pos_3", "joint_pos_4",
+      "joint_pos_5", "joint_pos_6", "joint_pos_7", "gripper_state"
     ]
   },
   "detectors": {
@@ -79,7 +83,24 @@
       "case_study": "franka_sim",
       "modality": "timeseries",
       "checkpoint": "franka-sim-lstm/best.pt",
-      "feature_schema": "franka_sim_v1",
+      "feature_schema": "franka_sim_v1"
+    },
+    "franka-sim-bottle-transformer": {
+      "case_study": "franka_sim",
+      "task": "bottle_task",
+      "modality": "timeseries",
+      "checkpoint": "franka-bottle-transformer-position-calibrated-v2/best.pt",
+      "feature_schema": "franka_position_v1",
+      "minimum_skill_frames": 10,
+      "recommended": true
+    },
+    "franka-sim-sorting-transformer": {
+      "case_study": "franka_sim",
+      "task": "sorting_task",
+      "modality": "timeseries",
+      "checkpoint": "franka-sorting-transformer-position-calibrated/best.pt",
+      "feature_schema": "franka_position_v1",
+      "minimum_skill_frames": 5,
       "recommended": true
     },
     "franka-sim-r3d18-frontview": {

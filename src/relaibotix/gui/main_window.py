@@ -299,7 +299,11 @@ class MainWindow(QMainWindow):
             from relaibotix.skilldetector import load_registry
 
             for detector in load_registry().detectors.values():
-                label = f"{detector.detector_id} — {detector.case_study}, {detector.modality}"
+                task = f", {detector.task}" if detector.task else ""
+                label = (
+                    f"{detector.detector_id} — {detector.case_study}{task}, "
+                    f"{detector.modality}"
+                )
                 self.detector_box.addItem(label, detector.detector_id)
         except Exception:
             pass

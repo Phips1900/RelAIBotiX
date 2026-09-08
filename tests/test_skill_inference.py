@@ -138,7 +138,7 @@ def test_camera_and_hybrid_require_video_root(tmp_path):
 
 def test_bundled_registry_auto_selects_mobile_lstm(tmp_path):
     registry = load_registry()
-    assert len(registry.detectors) == 8
+    assert len(registry.detectors) == 10
     mobile = registry.detectors["mobile-lstm"]
     input_path = tmp_path / "mobile.h5"
     with h5py.File(input_path, "w") as output:
@@ -169,3 +169,46 @@ def test_registry_rejects_incompatible_explicit_detector(tmp_path):
 
     with pytest.raises(ValueError, match="incompatible"):
         select_detector(registry, input_path, detector_id="mobile-lstm")
+
+
+def test_task_selects_calibrated_franka_detector(tmp_path):
+    registry = load_registry()
+    bottle = registry.detectors["franka-sim-bottle-transformer"]
+    input_path = tmp_path / "franka.h5"
+    with h5py.File(input_path, "w") as output:
+        data = output.create_group("data")
+        episode = data.create_group("demo_000000")
+        features = episode.create_dataset(
+            "features", data=np.zeros((2, len(bottle.required_features)))
+        )
+        features.attrs["feature_names"] = bottle.required_features
+        episode.create_dataset("timestamps/sim", data=[0.0, 0.05])
+        episode.create_dataset("labels/skill_id", data=[-1, -1])
+
+    selected = select_detector(
+        registry,
+        input_path,
+        case_study="franka_sim",
+        task="bottle_task",
+    )
+
+    assert selected.detector_id == "franka-sim-bottle-transformer"
+    assert selected.minimum_skill_frames == 10
+
+
+def test_franka_task_specific_detectors_are_not_guessed_from_same_schema(tmp_path):
+    registry = load_registry()
+    bottle = registry.detectors["franka-sim-bottle-transformer"]
+    input_path = tmp_path / "franka.h5"
+    with h5py.File(input_path, "w") as output:
+        data = output.create_group("data")
+        episode = data.create_group("demo_000000")
+        features = episode.create_dataset(
+            "features", data=np.zeros((2, len(bottle.required_features)))
+        )
+        features.attrs["feature_names"] = bottle.required_features
+        episode.create_dataset("timestamps/sim", data=[0.0, 0.05])
+        episode.create_dataset("labels/skill_id", data=[-1, -1])
+
+    with pytest.raises(ValueError, match="More than one compatible detector"):
+        select_detector(registry, input_path, case_study="franka_sim")

@@ -13,8 +13,11 @@ relaibotix skills infer canonical.h5 \
 ```
 
 Automatic selection compares the HDF5 feature names with the schemas in
-`checkpoints.json` and chooses the recommended time-series model. Use `--detector`
-to choose a different registered model or `--checkpoint` to bypass the registry.
+`checkpoints.json` and chooses the recommended time-series model. The Franka
+bottle and sorting Transformers use the same position inputs, so select them with
+`--task bottle_task`, `--task sorting_task`, or their explicit `--detector` ID.
+Each registry entry also supplies its calibrated minimum-duration filter. Use
+`--checkpoint` only to bypass the registry.
 
 The detector reads feature order, normalization, architecture, window alignment,
 and label taxonomy from the checkpoint. It copies the source HDF5 and writes raw

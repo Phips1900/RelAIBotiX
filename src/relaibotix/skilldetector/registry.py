@@ -19,6 +19,8 @@ class DetectorSpec:
     modality: str
     checkpoint: str
     required_features: tuple[str, ...]
+    task: str | None = None
+    minimum_skill_frames: int = 5
     recommended: bool = False
 
 
@@ -72,8 +74,14 @@ def load_registry(path: str | Path | None = None) -> DetectorRegistry:
             modality=modality,
             checkpoint=str(definition["checkpoint"]),
             required_features=tuple(features),
+            task=str(definition["task"]) if definition.get("task") is not None else None,
+            minimum_skill_frames=int(definition.get("minimum_skill_frames", 5)),
             recommended=bool(definition.get("recommended", False)),
         )
+        if detectors[str(detector_id)].minimum_skill_frames < 1:
+            raise ValueError(
+                f"Detector '{detector_id}' minimum_skill_frames must be at least 1."
+            )
     if not detectors:
         raise ValueError("Checkpoint registry contains no detectors.")
     return DetectorRegistry(detectors)
@@ -85,6 +93,7 @@ def select_detector(
     *,
     detector_id: str | None = None,
     case_study: str | None = None,
+    task: str | None = None,
     modality: str | None = None,
 ) -> DetectorSpec:
     """Select one compatible detector and reject HDF5 schema mismatches early."""
@@ -106,6 +115,7 @@ def select_detector(
             for detector in registry.detectors.values()
             if detector.modality == selected_modality
             and (case_study is None or detector.case_study == case_study)
+            and (task is None or detector.task == task)
             and set(detector.required_features).issubset(available_features)
         ]
         recommended = [detector for detector in candidates if detector.recommended]
@@ -115,7 +125,8 @@ def select_detector(
             return candidates[0]
         if len(candidates) > 1:
             raise ValueError(
-                "More than one compatible detector was found; select one with --detector."
+                "More than one compatible detector was found; select one with --detector "
+                "or narrow the selection with --task."
             )
         raise ValueError(
             "No compatible pretrained detector was found for this HDF5 feature schema."
@@ -129,6 +140,11 @@ def select_detector(
     if modality is not None and detector.modality != modality:
         raise ValueError(
             f"Detector '{detector.detector_id}' uses modality '{detector.modality}', not '{modality}'."
+        )
+    if task is not None and detector.task != task:
+        actual_task = detector.task or "all tasks"
+        raise ValueError(
+            f"Detector '{detector.detector_id}' belongs to task '{actual_task}', not '{task}'."
         )
     missing = sorted(set(detector.required_features) - available_features)
     if missing:

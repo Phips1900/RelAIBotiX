@@ -194,7 +194,14 @@ def test_skills_list_command(capsys):
     assert main(["skills", "list"]) == 0
     output = capsys.readouterr().out
     assert "mobile-lstm: mobile, timeseries [recommended]" in output
-    assert "franka-sim-lstm: franka_sim, timeseries [recommended]" in output
+    assert (
+        "franka-sim-bottle-transformer: franka_sim, timeseries [recommended], "
+        "task=bottle_task, min_frames=10"
+    ) in output
+    assert (
+        "franka-sim-sorting-transformer: franka_sim, timeseries [recommended], "
+        "task=sorting_task, min_frames=5"
+    ) in output
 
 
 def test_run_command_executes_complete_pipeline(tmp_path, monkeypatch):

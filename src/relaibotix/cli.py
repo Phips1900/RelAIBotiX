@@ -176,6 +176,7 @@ def _skills_parser() -> argparse.ArgumentParser:
     selection.add_argument("--checkpoint", type=Path, help="Use an explicit checkpoint path.")
     selection.add_argument("--detector", help="Use a detector ID from the checkpoint registry.")
     parser.add_argument("--case-study", help="Limit automatic selection to one case study.")
+    parser.add_argument("--task", help="Limit automatic selection to one task-specific detector.")
     parser.add_argument("--registry", type=Path, help="Use a custom checkpoint registry JSON.")
     parser.add_argument(
         "--checkpoint-root",
@@ -192,7 +193,11 @@ def _skills_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
-    parser.add_argument("--minimum-skill-frames", type=int, default=5)
+    parser.add_argument(
+        "--minimum-skill-frames",
+        type=int,
+        help="Override the detector's calibrated minimum segment length.",
+    )
     parser.add_argument("--target-stride", type=int, default=1)
     return parser
 
@@ -220,9 +225,11 @@ def _run_skills(arguments: Sequence[str]) -> int:
             except FileNotFoundError:
                 availability = "checkpoint not installed"
             default = " [recommended]" if detector.recommended else ""
+            task = f", task={detector.task}" if detector.task else ""
             print(
                 f"{detector.detector_id}: {detector.case_study}, "
-                f"{detector.modality}{default} - {availability}"
+                f"{detector.modality}{default}{task}, "
+                f"min_frames={detector.minimum_skill_frames} - {availability}"
             )
         return 0
     if not arguments or arguments[0] != "infer":
@@ -241,11 +248,18 @@ def _run_skills(arguments: Sequence[str]) -> int:
             args.input,
             detector_id=args.detector,
             case_study=args.case_study,
+            task=args.task,
             modality=None if args.modality == "auto" else args.modality,
         )
         checkpoint = resolve_checkpoint(detector, args.checkpoint_root)
         modality = detector.modality
         print(f"Selected detector: {detector.detector_id}")
+
+    minimum_skill_frames = (
+        args.minimum_skill_frames
+        if args.minimum_skill_frames is not None
+        else detector.minimum_skill_frames if detector is not None else 5
+    )
 
     result = run_inference(
         h5_path=args.input,
@@ -256,7 +270,7 @@ def _run_skills(arguments: Sequence[str]) -> int:
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         device=args.device,
-        minimum_skill_frames=args.minimum_skill_frames,
+        minimum_skill_frames=minimum_skill_frames,
         target_stride=args.target_stride,
     )
     print(
@@ -538,6 +552,7 @@ def _pipeline_parser() -> argparse.ArgumentParser:
     selection.add_argument("--checkpoint", type=Path)
     selection.add_argument("--detector")
     parser.add_argument("--case-study")
+    parser.add_argument("--task")
     parser.add_argument("--registry", type=Path)
     parser.add_argument("--checkpoint-root", type=Path)
     parser.add_argument(
@@ -549,7 +564,7 @@ def _pipeline_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
-    parser.add_argument("--minimum-skill-frames", type=int, default=5)
+    parser.add_argument("--minimum-skill-frames", type=int)
     parser.add_argument("--target-stride", type=int, default=1)
     parser.add_argument(
         "--legacy-existing-predictions",
@@ -612,8 +627,6 @@ def _run_pipeline(arguments: Sequence[str]) -> int:
             str(args.num_workers),
             "--device",
             args.device,
-            "--minimum-skill-frames",
-            str(args.minimum_skill_frames),
             "--target-stride",
             str(args.target_stride),
         ]
@@ -621,9 +634,11 @@ def _run_pipeline(arguments: Sequence[str]) -> int:
             ("--checkpoint", args.checkpoint),
             ("--detector", args.detector),
             ("--case-study", args.case_study),
+            ("--task", args.task),
             ("--registry", args.registry),
             ("--checkpoint-root", args.checkpoint_root),
             ("--lerobot-root", args.lerobot_root),
+            ("--minimum-skill-frames", args.minimum_skill_frames),
         ):
             if value is not None:
                 skill_arguments.extend((option, str(value)))

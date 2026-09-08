@@ -134,7 +134,21 @@ relaibotix skills infer canonical.h5 \
 The bundled registry lists all currently trained mobile and Franka-simulation
 models. For HDF5-only inference, RelAIBotiX compares the recorded feature names
 with the registered schemas and automatically selects the recommended time-series
-detector. A different model can be selected explicitly:
+detector. The simulated Franka bottle and sorting detectors intentionally use the
+same eight position features, so the task must also be supplied or the detector
+must be selected explicitly:
+
+```bash
+relaibotix skills infer canonical.h5 \
+  --case-study franka_sim \
+  --task bottle_task \
+  --checkpoint-root /path/to/relaibotix-skill-detector/outputs \
+  --output predicted.h5
+```
+
+The task-specific checkpoints retain their calibrated post-processing defaults:
+10 minimum frames for the bottle task and 5 for sorting. A different model can
+be selected explicitly:
 
 ```bash
 relaibotix skills infer canonical.h5 \
