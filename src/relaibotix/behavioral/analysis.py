@@ -19,7 +19,12 @@ from .results import BehavioralResult
 
 @dataclass(frozen=True)
 class BehavioralThresholds:
-    """Activity thresholds and exposure-band boundaries in signal-native units."""
+    """Activity thresholds and exposure-band boundaries.
+
+    Values are interpreted in signal-native units unless a component supplies
+    an exposure reference, in which case velocity and effort are fractions of
+    that reference.
+    """
 
     position_step: float = 1e-3
     velocity_active: float = 3e-2
@@ -138,6 +143,30 @@ def _exposure(values: np.ndarray | None, dt: np.ndarray, active: float, bands: t
     )
 
 
+def _continuous_weighted_time(
+    values: np.ndarray | None,
+    dt: np.ndarray,
+    active: float,
+    bands: tuple[float, float],
+    multipliers: tuple[float, float, float],
+) -> float:
+    """Integrate a capped piecewise-linear exposure factor over active intervals."""
+
+    if values is None or values.size <= 1:
+        return 0.0
+    magnitude = np.abs(values[:-1])
+    finite = np.isfinite(magnitude) & np.isfinite(dt) & (dt >= 0.0)
+    active_mask = finite & (magnitude > active)
+    if not np.any(active_mask):
+        return 0.0
+    factors = np.interp(
+        magnitude[active_mask],
+        (0.0, bands[0], bands[1]),
+        multipliers,
+    )
+    return float(np.sum(dt[active_mask] * factors))
+
+
 class BehavioralAnalyzer:
     """Calculate time, position, velocity, and effort metrics from labeled trajectories."""
 
@@ -147,10 +176,19 @@ class BehavioralAnalyzer:
         thresholds: BehavioralThresholds | None = None,
         skill_names: Mapping[int, str] | None = None,
         component_features: Mapping[str, Mapping[str, Sequence[str]]] | None = None,
+        component_references: Mapping[str, Mapping[str, float]] | None = None,
+        velocity_multipliers: tuple[float, float, float] = (1.0, 1.5, 2.0),
+        effort_multipliers: tuple[float, float, float] = (1.0, 2.0, 5.0),
     ) -> None:
         self.thresholds = thresholds or BehavioralThresholds()
         self.skill_names = dict(skill_names or {})
         self.component_features = component_features
+        self.component_references = {
+            str(component): {str(signal): float(value) for signal, value in references.items()}
+            for component, references in (component_references or {}).items()
+        }
+        self.velocity_multipliers = velocity_multipliers
+        self.effort_multipliers = effort_multipliers
 
     def analyze(
         self,
@@ -225,7 +263,14 @@ class BehavioralAnalyzer:
             segment_rows.append(segment)
             for joint, columns in joints.items():
                 joint_rows.append(
-                    self._joint_metrics(segment_values, segment_times, columns, joint, segment)
+                    self._joint_metrics(
+                        segment_values,
+                        segment_times,
+                        columns,
+                        joint,
+                        segment,
+                        self.component_references.get(joint, {}),
+                    )
                 )
             if base_columns:
                 base_rows.append(
@@ -250,6 +295,11 @@ class BehavioralAnalyzer:
                     "robot_config" if self.component_features is not None else "feature_names"
                 ),
                 "interval_attribution": "left_endpoint",
+                "component_exposure_references": self.component_references,
+                "continuous_exposure_multipliers": {
+                    "velocity": list(self.velocity_multipliers),
+                    "effort": list(self.effort_multipliers),
+                },
             },
         )
 
@@ -321,12 +371,36 @@ class BehavioralAnalyzer:
         input_path: str | Path,
         *,
         skill_labels_dataset: str | None = None,
+        successful_only: bool = False,
+        end_after_skill: str | int | None = None,
+        exclude_missing_end_skill: bool = False,
+        keep_missing_end_skill: bool = False,
     ) -> BehavioralResult:
         """Analyze flat legacy input or canonical grouped detector output."""
 
+        if exclude_missing_end_skill and keep_missing_end_skill:
+            raise ValueError(
+                "Missing terminal-skill episodes cannot be both excluded and retained."
+            )
         with h5py.File(input_path, "r") as source:
             if "data" in source:
-                return self._analyze_grouped_h5(source, skill_labels_dataset)
+                result = self._analyze_grouped_h5(
+                    source,
+                    skill_labels_dataset,
+                    successful_only=successful_only,
+                )
+                return self._trim_after_final_skill(
+                    result,
+                    end_after_skill,
+                    exclude_missing=exclude_missing_end_skill,
+                    keep_missing=keep_missing_end_skill,
+                )
+
+            if successful_only:
+                raise ValueError(
+                    "Successful-only selection requires canonical grouped HDF5 input "
+                    "with a task_success attribute on every episode."
+                )
 
             label_path = skill_labels_dataset or next(
                 (
@@ -359,7 +433,7 @@ class BehavioralAnalyzer:
                 [f"run_{run_id:06d}" for run_id in run_ids],
                 dtype=object,
             )
-            return self.analyze(
+            result = self.analyze(
                 features=feature_dataset[:],
                 feature_names=decode_feature_names(feature_dataset),
                 skill_labels=source[label_path][:],
@@ -367,11 +441,113 @@ class BehavioralAnalyzer:
                 episode_ids=run_ids,
                 episode_keys=episode_keys,
             )
+            return self._trim_after_final_skill(
+                result,
+                end_after_skill,
+                exclude_missing=exclude_missing_end_skill,
+                keep_missing=keep_missing_end_skill,
+            )
+
+    def _trim_after_final_skill(
+        self,
+        result: BehavioralResult,
+        terminal_skill: str | int | None,
+        *,
+        exclude_missing: bool,
+        keep_missing: bool,
+    ) -> BehavioralResult:
+        """Retain each episode through its final occurrence of a terminal skill."""
+
+        if terminal_skill is None:
+            return result
+        segments = result.segments
+        if isinstance(terminal_skill, int) or str(terminal_skill).strip().lstrip("-").isdigit():
+            terminal_id = int(terminal_skill)
+            matches = segments["skill_id"] == terminal_id
+            terminal_label = str(terminal_id)
+        else:
+            terminal_label = str(terminal_skill).strip()
+            matches = segments["skill"].str.casefold() == terminal_label.casefold()
+
+        terminal_segments = segments.loc[matches]
+        episode_ids = set(map(int, segments["episode_id"].unique()))
+        terminal_episode_ids = set(map(int, terminal_segments["episode_id"].unique()))
+        missing_episode_ids = sorted(episode_ids - terminal_episode_ids)
+        missing_episode_keys = sorted(
+            segments.loc[
+                segments["episode_id"].isin(missing_episode_ids), "episode_key"
+            ].astype(str).unique()
+        )
+        if missing_episode_ids and not exclude_missing and not keep_missing:
+            preview = ", ".join(missing_episode_keys[:5])
+            suffix = "..." if len(missing_episode_keys) > 5 else ""
+            raise ValueError(
+                f"Terminal skill '{terminal_label}' was not detected in "
+                f"{len(missing_episode_ids)} episodes: {preview}{suffix}"
+            )
+
+        final_segments = terminal_segments.groupby("episode_id")["segment_index"].max()
+        keep_episode = (
+            pd.Series(True, index=segments.index)
+            if keep_missing
+            else segments["episode_id"].isin(terminal_episode_ids)
+        )
+        keep_through_terminal = segments.apply(
+            lambda row: (
+                keep_missing and int(row["episode_id"]) not in terminal_episode_ids
+            ) or (
+                int(row["episode_id"]) in terminal_episode_ids
+                and int(row["segment_index"])
+                <= int(final_segments.loc[int(row["episode_id"])])
+            ),
+            axis=1,
+        )
+        kept_segments = segments.loc[keep_episode & keep_through_terminal].copy()
+        retained_pairs = pd.MultiIndex.from_frame(
+            kept_segments[["episode_id", "segment_index"]]
+        )
+
+        def retain_metrics(table: pd.DataFrame) -> pd.DataFrame:
+            if table.empty:
+                return table.copy()
+            pairs = pd.MultiIndex.from_frame(table[["episode_id", "segment_index"]])
+            return table.loc[pairs.isin(retained_pairs)].copy()
+
+        joint_metrics = retain_metrics(result.joint_metrics)
+        base_metrics = retain_metrics(result.base_metrics)
+        return BehavioralResult(
+            segments=kept_segments,
+            joint_metrics=joint_metrics,
+            skill_summary=self._summarize_skills(kept_segments),
+            joint_summary=self._summarize_joints(joint_metrics),
+            base_metrics=base_metrics,
+            base_summary=self._summarize_base(base_metrics),
+            metadata={
+                **result.metadata,
+                "mission_end_policy": "after_final_skill",
+                "mission_end_skill": terminal_label,
+                "missing_end_skill_policy": (
+                    "keep_complete_episode" if keep_missing else
+                    "exclude_episode" if exclude_missing else "error"
+                ),
+                "pre_trim_episode_count": len(episode_ids),
+                "analyzed_episode_count": (
+                    len(episode_ids) if keep_missing else len(terminal_episode_ids)
+                ),
+                "excluded_missing_end_skill_episodes": (
+                    0 if keep_missing else len(missing_episode_ids)
+                ),
+                "missing_end_skill_episode_keys": missing_episode_keys,
+                "post_terminal_segments_excluded": int(len(segments) - len(kept_segments)),
+            },
+        )
 
     def _analyze_grouped_h5(
         self,
         source: h5py.File,
         skill_labels_dataset: str | None,
+        *,
+        successful_only: bool = False,
     ) -> BehavioralResult:
         data = source["data"]
         episode_names = [
@@ -389,6 +565,7 @@ class BehavioralAnalyzer:
         analysis_episode_index = 0
         reference_names: tuple[str, ...] | None = None
         detected_skill_names: dict[int, str] = {}
+        excluded_unsuccessful_episodes = 0
         prediction_paths = (
             (skill_labels_dataset.lstrip("/"),)
             if skill_labels_dataset
@@ -401,6 +578,15 @@ class BehavioralAnalyzer:
 
         for episode_name in episode_names:
             episode = data[episode_name]
+            if successful_only:
+                if "task_success" not in episode.attrs:
+                    raise ValueError(
+                        f"/data/{episode_name} is missing the task_success attribute "
+                        "required for successful-only selection."
+                    )
+                if not bool(episode.attrs["task_success"]):
+                    excluded_unsuccessful_episodes += 1
+                    continue
             feature_dataset = episode["features"]
             names = decode_feature_names(feature_dataset)
             if reference_names is None:
@@ -457,9 +643,12 @@ class BehavioralAnalyzer:
                 episode_keys.append(np.full(end - start, region_key, dtype=object))
                 analysis_episode_index += 1
 
-        assert reference_names is not None
         if not features:
-            raise ValueError("Canonical HDF5 input contains no valid samples to analyze.")
+            detail = " successful" if successful_only else " valid"
+            raise ValueError(
+                f"Canonical HDF5 input contains no{detail} episodes with valid samples to analyze."
+            )
+        assert reference_names is not None
         result = self.analyze(
             features=np.concatenate(features),
             feature_names=reference_names,
@@ -475,6 +664,10 @@ class BehavioralAnalyzer:
                 **result.metadata,
                 "validity_policy": "exclude_explicitly_invalid_samples",
                 "excluded_invalid_samples": excluded_invalid_samples,
+                "run_selection": "successful_only" if successful_only else "all_attempts",
+                "input_episode_count": len(episode_names),
+                "selected_episode_count": len(episode_names) - excluded_unsuccessful_episodes,
+                "excluded_unsuccessful_episodes": excluded_unsuccessful_episodes,
             },
         )
 
@@ -520,6 +713,7 @@ class BehavioralAnalyzer:
         columns: Mapping[str, int | tuple[int, ...]],
         joint: str,
         segment: Mapping[str, object],
+        references: Mapping[str, float],
     ) -> dict[str, object]:
         def signal_values(signal: str) -> tuple[np.ndarray | None, int]:
             if signal not in columns:
@@ -565,11 +759,50 @@ class BehavioralAnalyzer:
                 end_position = _finite_stat(position[-1:], np.mean)
                 position_range = _finite_stat(position, np.ptp)
 
+        velocity_reference = references.get("velocity")
+        effort_reference = references.get("effort")
+        distance_reference = references.get("distance")
+        velocity_for_exposure = (
+            velocity / velocity_reference
+            if velocity is not None and velocity_reference is not None
+            else velocity
+        )
+        effort_for_exposure = (
+            effort / effort_reference
+            if effort is not None and effort_reference is not None
+            else effort
+        )
+        traveled_distance_utilization = (
+            traveled_distance / distance_reference
+            if distance_reference is not None and np.isfinite(traveled_distance)
+            else float("nan")
+        )
+
         vel_low, vel_medium, vel_high, velocity_active = _exposure(
-            velocity, dt, self.thresholds.velocity_active, self.thresholds.velocity_bands
+            velocity_for_exposure,
+            dt,
+            self.thresholds.velocity_active,
+            self.thresholds.velocity_bands,
         )
         effort_low, effort_medium, effort_high, effort_active = _exposure(
-            effort, dt, self.thresholds.effort_active, self.thresholds.effort_bands
+            effort_for_exposure,
+            dt,
+            self.thresholds.effort_active,
+            self.thresholds.effort_bands,
+        )
+        velocity_weighted_time_continuous = _continuous_weighted_time(
+            velocity_for_exposure,
+            dt,
+            self.thresholds.velocity_active,
+            self.thresholds.velocity_bands,
+            self.velocity_multipliers,
+        )
+        effort_weighted_time_continuous = _continuous_weighted_time(
+            effort_for_exposure,
+            dt,
+            self.thresholds.effort_active,
+            self.thresholds.effort_bands,
+            self.effort_multipliers,
         )
         active_mask = position_active | velocity_active | effort_active
         active_time = float(np.sum(dt[active_mask])) if dt.size else 0.0
@@ -590,18 +823,28 @@ class BehavioralAnalyzer:
             "end_position": end_position,
             "position_range": position_range,
             "traveled_distance": traveled_distance,
+            "distance_reference": distance_reference,
+            "traveled_distance_utilization": traveled_distance_utilization,
             "mean_abs_velocity": _finite_stat(np.abs(velocity[:owned_samples]), np.mean) if velocity is not None else float("nan"),
             "rms_velocity": _finite_stat(velocity[:owned_samples], lambda value: np.sqrt(np.mean(value ** 2))) if velocity is not None else float("nan"),
             "max_abs_velocity": _finite_stat(np.abs(velocity[:owned_samples]), np.max) if velocity is not None else float("nan"),
+            "velocity_reference": velocity_reference,
+            "mean_velocity_utilization": _finite_stat(np.abs(velocity_for_exposure[:owned_samples]), np.mean) if velocity_for_exposure is not None and velocity_reference is not None else float("nan"),
+            "max_velocity_utilization": _finite_stat(np.abs(velocity_for_exposure[:owned_samples]), np.max) if velocity_for_exposure is not None and velocity_reference is not None else float("nan"),
             "velocity_time_low": vel_low,
             "velocity_time_medium": vel_medium,
             "velocity_time_high": vel_high,
+            "velocity_weighted_time_continuous": velocity_weighted_time_continuous,
             "mean_abs_effort": _finite_stat(np.abs(effort[:owned_samples]), np.mean) if effort is not None else float("nan"),
             "rms_effort": _finite_stat(effort[:owned_samples], lambda value: np.sqrt(np.mean(value ** 2))) if effort is not None else float("nan"),
             "max_abs_effort": _finite_stat(np.abs(effort[:owned_samples]), np.max) if effort is not None else float("nan"),
+            "effort_reference": effort_reference,
+            "mean_effort_utilization": _finite_stat(np.abs(effort_for_exposure[:owned_samples]), np.mean) if effort_for_exposure is not None and effort_reference is not None else float("nan"),
+            "max_effort_utilization": _finite_stat(np.abs(effort_for_exposure[:owned_samples]), np.max) if effort_for_exposure is not None and effort_reference is not None else float("nan"),
             "effort_time_low": effort_low,
             "effort_time_medium": effort_medium,
             "effort_time_high": effort_high,
+            "effort_weighted_time_continuous": effort_weighted_time_continuous,
             "active_time": active_time,
             "active_fraction": active_time / duration if duration > 0.0 else 0.0,
         }
@@ -626,20 +869,28 @@ class BehavioralAnalyzer:
             .agg(
                 n_segments=("segment_index", "count"),
                 total_traveled_distance=("traveled_distance", lambda value: value.sum(min_count=1)),
+                total_traveled_distance_utilization=("traveled_distance_utilization", lambda value: value.sum(min_count=1)),
                 mean_traveled_distance=("traveled_distance", "mean"),
+                mean_traveled_distance_utilization=("traveled_distance_utilization", "mean"),
                 max_traveled_distance=("traveled_distance", "max"),
                 total_active_time=("active_time", "sum"),
                 mean_active_fraction=("active_fraction", "mean"),
                 max_abs_velocity=("max_abs_velocity", "max"),
                 mean_rms_velocity=("rms_velocity", "mean"),
+                mean_velocity_utilization=("mean_velocity_utilization", "mean"),
+                max_velocity_utilization=("max_velocity_utilization", "max"),
                 velocity_time_low=("velocity_time_low", "sum"),
                 velocity_time_medium=("velocity_time_medium", "sum"),
                 velocity_time_high=("velocity_time_high", "sum"),
+                velocity_weighted_time_continuous=("velocity_weighted_time_continuous", "sum"),
                 max_abs_effort=("max_abs_effort", "max"),
                 mean_rms_effort=("rms_effort", "mean"),
+                mean_effort_utilization=("mean_effort_utilization", "mean"),
+                max_effort_utilization=("max_effort_utilization", "max"),
                 effort_time_low=("effort_time_low", "sum"),
                 effort_time_medium=("effort_time_medium", "sum"),
                 effort_time_high=("effort_time_high", "sum"),
+                effort_weighted_time_continuous=("effort_weighted_time_continuous", "sum"),
             )
         )
 

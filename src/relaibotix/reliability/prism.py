@@ -11,7 +11,11 @@ from collections import defaultdict
 def _normalize_row_terms(terms, precision):
     """
     terms: list[(to_state_name, prob_float)]
-    returns: list[(to_state_name, prob_float)] whose probs sum EXACTLY to 1.0
+    returns: list[(to_state_name, Decimal)] whose probabilities sum exactly to 1.
+
+    Keep the values as decimals until they are written. Converting the adjusted
+    final term back to a binary float can make a row that is exact here fail
+    PRISM's exact-arithmetic row-sum check after formatting.
     """
     # keep enough working precision, then quantize to 10^-precision
     getcontext().prec = precision + 8
@@ -28,7 +32,7 @@ def _normalize_row_terms(terms, precision):
     # if everything rounded to zero, keep a single 1.0
     if sum(d for _, d in dec_terms) == 0:
         t0 = dec_terms[0][0]
-        return [(t0, 1.0)]
+        return [(t0, Decimal(1))]
 
     # adjust the last term to make the sum exactly 1.0
     if len(dec_terms) == 1:
@@ -46,8 +50,12 @@ def _normalize_row_terms(terms, precision):
         else:
             dec_terms[-1] = (dec_terms[-1][0], last)
 
-    # back to floats
-    return [(to, float(d)) for (to, d) in dec_terms]
+    return dec_terms
+
+
+def _decimal_text(value: Decimal) -> str:
+    """Serialize a probability without reintroducing binary-float rounding."""
+    return format(value, "f")
 
 
 def export_prism_from_mc(
@@ -97,9 +105,9 @@ def export_prism_from_mc(
         # Normalize/round row to sum exactly 1.0; if nothing -> self-loop
         terms = _normalize_row_terms(terms, precision)
         if not terms:
-            terms = [(frm, 1.0)]
+            terms = [(frm, Decimal(1))]
 
-        rhs = " + ".join(f"{p:.{precision}g} : (s'={idx[to]})" for to, p in terms)
+        rhs = " + ".join(f"{_decimal_text(p)} : (s'={idx[to]})" for to, p in terms)
         lines.append(f"  [] s={frm_id} -> {rhs};\n")
 
     lines.append("endmodule\n\n")
@@ -273,9 +281,9 @@ def export_prism_no_done(
         # Normalize row; if empty, self-loop
         terms = _normalize_row_terms(list(out.items()), precision)
         if not terms:
-            terms = [(frm, 1.0)]
+            terms = [(frm, Decimal(1))]
 
-        rhs = " + ".join(f"{p:.{precision}g} : (s'={idx[to]})" for to, p in terms)
+        rhs = " + ".join(f"{_decimal_text(p)} : (s'={idx[to]})" for to, p in terms)
         lines.append(f"  [] s={idx[frm]} -> {rhs};\n")
 
     lines.append("endmodule\n\n")

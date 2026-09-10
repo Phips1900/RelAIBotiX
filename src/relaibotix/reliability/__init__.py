@@ -24,6 +24,7 @@ from .analysis import ReliabilityResult, analyze_component_sensitivity, analyze_
 from .dtmc import DTMCModel, DTMCSolution, RepeatedRunMTTF, solve_dtmc, solve_repeated_run_mttf
 from .storm import StormResult, run_storm
 from .prism_backend import PrismResult, run_prism
+from .plots import write_sensitivity_spider_svg
 
 __all__ = [
     "BDDResult",
@@ -50,4 +51,5 @@ __all__ = [
     "solve_repeated_run_mttf",
     "run_storm",
     "run_prism",
+    "write_sensitivity_spider_svg",
 ]

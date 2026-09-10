@@ -19,6 +19,12 @@ bottle and sorting Transformers use the same position inputs, so select them wit
 Each registry entry also supplies its calibrated minimum-duration filter. Use
 `--checkpoint` only to bypass the registry.
 
+The `franka_real` bottle and sorting entries point to the same checkpoints as
+their simulation counterparts. Their `input_profile=auto` setting delegates the
+real gripper adaptation to the detector package: canonical real-Franka inputs
+store `[0, 1]`, while the checkpoints expect `[-1, 1]`. Simulation inputs pass
+through unchanged.
+
 The detector reads feature order, normalization, architecture, window alignment,
 and label taxonomy from the checkpoint. It copies the source HDF5 and writes raw
 and minimum-duration-filtered predictions to each episode's `labels` group.

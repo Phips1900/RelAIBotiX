@@ -27,6 +27,11 @@ class ExperimentSpec:
     scope: str
     skill_names: Mapping[int, str]
     label_source: str
+    episode_selection: str = "all"
+    terminal_skill: str | int | None = None
+    exclude_missing_terminal: bool = False
+    keep_missing_terminal: bool = False
+    exposure_model: str = "bands"
 
 
 @dataclass(frozen=True)
@@ -76,6 +81,37 @@ def load_experiment_manifest(path: str | Path) -> ExperimentManifest:
         raw_names = entry["skill_names"]
         if not isinstance(raw_names, dict) or not raw_names:
             raise ValueError(f"Experiment {index} skill_names must be a non-empty object.")
+        episode_selection = entry.get("episode_selection", "all")
+        if episode_selection not in {"all", "successful"}:
+            raise ValueError(
+                f"Experiment {index} episode_selection must be 'all' or 'successful'."
+            )
+        terminal_skill = entry.get("terminal_skill")
+        if terminal_skill is not None and (
+            isinstance(terminal_skill, bool) or not isinstance(terminal_skill, (str, int))
+        ):
+            raise ValueError(
+                f"Experiment {index} terminal_skill must be a skill name, ID, or null."
+            )
+        exclude_missing_terminal = entry.get("exclude_missing_terminal", False)
+        if not isinstance(exclude_missing_terminal, bool):
+            raise ValueError(
+                f"Experiment {index} exclude_missing_terminal must be a boolean."
+            )
+        keep_missing_terminal = entry.get("keep_missing_terminal", False)
+        if not isinstance(keep_missing_terminal, bool):
+            raise ValueError(
+                f"Experiment {index} keep_missing_terminal must be a boolean."
+            )
+        if exclude_missing_terminal and keep_missing_terminal:
+            raise ValueError(
+                f"Experiment {index} cannot exclude and retain missing terminal skills."
+            )
+        exposure_model = entry.get("exposure_model", "bands")
+        if exposure_model not in {"bands", "continuous"}:
+            raise ValueError(
+                f"Experiment {index} exposure_model must be 'bands' or 'continuous'."
+            )
         experiments.append(ExperimentSpec(
             experiment_id=str(entry["id"]),
             setting=str(entry["setting"]),
@@ -89,6 +125,11 @@ def load_experiment_manifest(path: str | Path) -> ExperimentManifest:
             scope=str(entry["scope"]),
             skill_names={int(key): str(value) for key, value in raw_names.items()},
             label_source=str(entry["label_source"]),
+            episode_selection=str(episode_selection),
+            terminal_skill=terminal_skill,
+            exclude_missing_terminal=exclude_missing_terminal,
+            keep_missing_terminal=keep_missing_terminal,
+            exposure_model=str(exposure_model),
         ))
     identifiers = [experiment.experiment_id for experiment in experiments]
     if len(set(identifiers)) != len(identifiers):
@@ -114,6 +155,13 @@ def configured_analyzer(
             for name, component in config.components.items()
             if any(component.features.values())
         },
+        component_references={
+            name: component.exposure_references
+            for name, component in config.components.items()
+            if component.exposure_references
+        },
+        velocity_multipliers=assumptions.velocity_multipliers,
+        effort_multipliers=assumptions.effort_multipliers,
         skill_names=skill_names,
     )
 
@@ -152,11 +200,6 @@ def write_experiment_summary(
         episode_keys = {str(row["episode_key"]) for row in behavior["segments"]}
         runs = len(episode_keys)
         total_time = sum(float(row["duration"]) for row in behavior["segments"])
-        joint_travel = sum(
-            float(row["total_traveled_distance"])
-            for row in behavior["joint_summary"]
-            if str(row["joint"]) != "gripper"
-        )
         critical = sensitivity.head(2)["component"].astype(str).tolist()
         rows.append({
             "setting": experiment.setting,
@@ -166,7 +209,6 @@ def write_experiment_summary(
             "scope": experiment.scope,
             "runs": runs,
             "average_time_per_run_s": total_time / runs,
-            "average_cumulative_joint_travel_per_run_rad": joint_travel / runs,
             "system_failure_probability_per_run": reliability["dtmc"]["failure_probability"],
             "mttf_h": reliability["repeated_run_mttf"]["hours"],
             "critical_components": " & ".join(critical),
@@ -179,6 +221,11 @@ def write_experiment_summary(
             "robot_config_sha256": sha256_file(experiment.robot_config),
             "label_source": experiment.label_source,
             "skill_names": dict(experiment.skill_names),
+            "episode_selection": experiment.episode_selection,
+            "terminal_skill": experiment.terminal_skill,
+            "exclude_missing_terminal": experiment.exclude_missing_terminal,
+            "keep_missing_terminal": experiment.keep_missing_terminal,
+            "exposure_model": reliability["exposure_model"],
             "runs": runs,
         })
 
@@ -190,7 +237,7 @@ def write_experiment_summary(
 
     headers = (
         "Setting", "Task", "Policy", "Runs", "Avg. time/run (s)",
-        "Joint travel/run (rad)", "Failure probability/run", "MTTF (h)",
+        "Failure probability/run", "MTTF (h)",
         "Critical components",
     )
     markdown = [
@@ -202,7 +249,6 @@ def write_experiment_summary(
             "| " + " | ".join((
                 str(row["setting"]), str(row["task"]), str(row["policy"]),
                 str(row["runs"]), f'{row["average_time_per_run_s"]:.2f}',
-                f'{row["average_cumulative_joint_travel_per_run_rad"]:.2f}',
                 f'{row["system_failure_probability_per_run"]:.3e}',
                 f'{row["mttf_h"]:.0f}', str(row["critical_components"]),
             )) + " |"
@@ -211,16 +257,15 @@ def write_experiment_summary(
     markdown_path.write_text("\n".join(markdown) + "\n")
 
     latex_lines = [
-        r"\begin{tabular}{lllrrrrrl}",
+        r"\begin{tabular}{lllrrrrl}",
         r"\toprule",
-        r"Setting & Task & Policy & Runs & Time/run (s) & Travel/run (rad) & $P_f$/run & MTTF (h) & Critical components \\",
+        r"Setting & Task & Policy & Runs & Time/run (s) & $P_f$/run & MTTF (h) & Critical components \\",
         r"\midrule",
     ]
     for row in rows:
         latex_lines.append(
             f'{_latex(row["setting"])} & {_latex(row["task"])} & {_latex(row["policy"])} & '
             f'{row["runs"]} & {row["average_time_per_run_s"]:.2f} & '
-            f'{row["average_cumulative_joint_travel_per_run_rad"]:.2f} & '
             f'{row["system_failure_probability_per_run"]:.3e} & '
             f'{row["mttf_h"]:.0f} & '
             f'{_latex(row["critical_components"])} ' + r"\\"
@@ -239,6 +284,7 @@ def write_experiment_summary(
             "dtmc_termination": "each_contiguous_recording_transitions_to_done",
             "mttf": "completed_runs_restart; failures_are_absorbing",
             "sensitivity_factor": 10.0,
+            "exposure_models": sorted({item["exposure_model"] for item in provenance}),
         },
         "solvers": dict(solver_metadata),
         "experiments": provenance,

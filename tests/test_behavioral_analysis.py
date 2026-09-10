@@ -124,6 +124,48 @@ def test_configured_multi_axis_component_counts_time_once():
     assert head["active_time"] == pytest.approx(2.0)
 
 
+def test_component_references_normalize_exposure_bands_and_distance():
+    features = np.array([
+        [0.0, 0.8, 4.0],
+        [1.0, 1.2, 8.0],
+        [3.0, 0.0, 0.0],
+    ])
+    result = BehavioralAnalyzer(
+        component_features={
+            "joint_1": {
+                "position": ("position",),
+                "velocity": ("velocity",),
+                "effort": ("effort",),
+            }
+        },
+        component_references={
+            "joint_1": {"velocity": 2.0, "effort": 10.0, "distance": 6.0}
+        },
+    ).analyze(
+        features=features,
+        feature_names=["position", "velocity", "effort"],
+        skill_labels=np.array([1, 1, 1]),
+        timestamps=np.array([0.0, 1.0, 2.0]),
+        episode_ids=np.array([0, 0, 0]),
+    )
+
+    joint = result.joint_metrics.iloc[0]
+    assert joint["traveled_distance"] == pytest.approx(3.0)
+    assert joint["traveled_distance_utilization"] == pytest.approx(0.5)
+    assert joint["velocity_time_low"] == pytest.approx(1.0)
+    assert joint["velocity_time_medium"] == pytest.approx(1.0)
+    assert joint["effort_time_medium"] == pytest.approx(1.0)
+    assert joint["effort_time_high"] == pytest.approx(1.0)
+    assert joint["mean_velocity_utilization"] == pytest.approx(1.0 / 3.0)
+    assert joint["mean_effort_utilization"] == pytest.approx(0.4)
+    assert result.joint_summary.iloc[0][
+        "total_traveled_distance_utilization"
+    ] == pytest.approx(0.5)
+    assert result.metadata["component_exposure_references"] == {
+        "joint_1": {"velocity": 2.0, "effort": 10.0, "distance": 6.0}
+    }
+
+
 def test_mobile_base_reports_translation_and_wrapped_rotation():
     features = np.array([
         [0.0, 0.0, 3.0, 0.3, 0.4, 0.2, 0.0],
@@ -187,6 +229,9 @@ def test_analyze_h5_and_export(tmp_path):
         "base_metrics", "base_summary", "metadata"
     }
     assert result.metadata["behavioral_thresholds"]["velocity_bands"] == [0.5, 1.0]
+    assert "velocity_weighted_time_continuous" in result.joint_summary
+    assert "effort_weighted_time_continuous" in result.joint_summary
+    assert result.metadata["continuous_exposure_multipliers"]["effort"] == [1.0, 2.0, 5.0]
 
 
 def test_flat_h5_assigns_unique_keys_when_source_episode_ids_repeat(tmp_path):
@@ -240,6 +285,107 @@ def test_analyze_grouped_detector_output_uses_filtered_labels_and_taxonomy(tmp_p
         {"episode_key": "demo_000001", "skill_id": 1, "skill": "move"},
     ]
     assert result.skill_summary.iloc[0]["n_episodes"] == 2
+
+
+def test_grouped_analysis_can_select_only_explicitly_successful_runs(tmp_path):
+    input_path = tmp_path / "predicted.h5"
+    with h5py.File(input_path, "w") as output:
+        for episode_index, successful in enumerate((True, False, True)):
+            episode = output.create_group(f"data/demo_{episode_index:06d}")
+            episode.attrs["task_success"] = successful
+            features = episode.create_dataset(
+                "features", data=np.array([[0.0], [1.0]])
+            )
+            features.attrs["feature_names"] = ["joint_pos_1"]
+            episode.create_dataset("timestamps/sim", data=[0.0, 1.0])
+            episode.create_dataset("labels/filtered_skill_id", data=[1, 1])
+
+    result = BehavioralAnalyzer().analyze_h5(input_path, successful_only=True)
+
+    assert result.segments["episode_key"].tolist() == [
+        "demo_000000",
+        "demo_000002",
+    ]
+    assert result.metadata["run_selection"] == "successful_only"
+    assert result.metadata["input_episode_count"] == 3
+    assert result.metadata["selected_episode_count"] == 2
+    assert result.metadata["excluded_unsuccessful_episodes"] == 1
+
+
+def test_successful_only_requires_explicit_success_metadata(tmp_path):
+    input_path = tmp_path / "predicted.h5"
+    with h5py.File(input_path, "w") as output:
+        episode = output.create_group("data/demo_000000")
+        features = episode.create_dataset("features", data=np.array([[0.0], [1.0]]))
+        features.attrs["feature_names"] = ["joint_pos_1"]
+        episode.create_dataset("timestamps/sim", data=[0.0, 1.0])
+        episode.create_dataset("labels/filtered_skill_id", data=[1, 1])
+
+    with pytest.raises(ValueError, match="missing the task_success attribute"):
+        BehavioralAnalyzer().analyze_h5(input_path, successful_only=True)
+
+
+def test_grouped_analysis_trims_after_final_named_skill(tmp_path):
+    input_path = tmp_path / "predicted.h5"
+    with h5py.File(input_path, "w") as output:
+        episode = output.create_group("data/demo_000000")
+        features = episode.create_dataset(
+            "features", data=np.array([[0.0], [1.0], [2.0], [3.0]])
+        )
+        features.attrs["feature_names"] = ["joint_pos_1"]
+        episode.create_dataset("timestamps/sim", data=[0.0, 1.0, 2.0, 3.0])
+        labels = episode.create_dataset(
+            "labels/filtered_skill_id", data=[1, 4, 4, 1]
+        )
+        labels.attrs["class_skill_ids"] = [1, 4]
+        labels.attrs["class_names_json"] = '["move", "place"]'
+
+    result = BehavioralAnalyzer().analyze_h5(input_path, end_after_skill="place")
+
+    assert result.segments["skill"].tolist() == ["move", "place"]
+    assert result.segments["duration"].sum() == pytest.approx(3.0)
+    assert result.joint_metrics["traveled_distance"].sum() == pytest.approx(3.0)
+    assert result.metadata["mission_end_policy"] == "after_final_skill"
+    assert result.metadata["post_terminal_segments_excluded"] == 1
+
+
+def test_terminal_skill_missing_is_error_unless_explicitly_excluded(tmp_path):
+    input_path = tmp_path / "predicted.h5"
+    with h5py.File(input_path, "w") as output:
+        for episode_index, labels in enumerate(([1, 4], [1, 1])):
+            episode = output.create_group(f"data/demo_{episode_index:06d}")
+            features = episode.create_dataset(
+                "features", data=np.array([[0.0], [1.0]])
+            )
+            features.attrs["feature_names"] = ["joint_pos_1"]
+            episode.create_dataset("timestamps/sim", data=[0.0, 1.0])
+            label_data = episode.create_dataset(
+                "labels/filtered_skill_id", data=labels
+            )
+            label_data.attrs["class_skill_ids"] = [1, 4]
+            label_data.attrs["class_names_json"] = '["move", "place"]'
+
+    with pytest.raises(ValueError, match="was not detected in 1 episodes"):
+        BehavioralAnalyzer().analyze_h5(input_path, end_after_skill="place")
+
+    result = BehavioralAnalyzer().analyze_h5(
+        input_path,
+        end_after_skill="place",
+        exclude_missing_end_skill=True,
+    )
+    assert result.metadata["analyzed_episode_count"] == 1
+    assert result.metadata["excluded_missing_end_skill_episodes"] == 1
+    assert result.metadata["missing_end_skill_episode_keys"] == ["demo_000001"]
+
+    retained = BehavioralAnalyzer().analyze_h5(
+        input_path,
+        end_after_skill="place",
+        keep_missing_end_skill=True,
+    )
+    assert retained.metadata["analyzed_episode_count"] == 2
+    assert retained.metadata["excluded_missing_end_skill_episodes"] == 0
+    assert retained.metadata["missing_end_skill_policy"] == "keep_complete_episode"
+    assert set(retained.segments["episode_key"]) == {"demo_000000", "demo_000001"}
 
 
 def test_grouped_analysis_excludes_explicitly_invalid_unknown_tail(tmp_path):

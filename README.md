@@ -99,6 +99,17 @@ relaibotix h5 convert legacy.h5 canonical.h5
 
 Neither validation nor conversion changes the source file.
 
+Invalid or documented no-pick episodes can be removed into a new canonical input
+before skill inference. Source files remain untouched and episode keys are preserved
+for traceability:
+
+```bash
+relaibotix h5 select recording.h5 selected.h5 \
+  --exclude-episode demo_000027 \
+  --exclude-episode demo_000028 \
+  --drop-feature unavailable_measurement
+```
+
 ## Complete pipeline
 
 Run validation, optional flat-to-canonical conversion, mandatory skill inference,
@@ -151,6 +162,25 @@ The task-specific checkpoints retain their calibrated post-processing defaults:
 10 minimum frames for the bottle task and 5 for sorting. Both also use the
 calibrated Franka manipulation transition constraints. A different model can be
 selected explicitly:
+
+The same task checkpoints support real Franka recordings through zero-shot
+transfer. Select `franka_real`; the detector then recognizes canonical files
+whose root `source_format` identifies real Franka data and maps the recorded
+gripper range from `[0, 1]` to the checkpoint convention `[-1, 1]` in memory:
+
+```bash
+relaibotix skills infer real_franka.h5 \
+  --case-study franka_real \
+  --task bottle_task \
+  --checkpoint-root /path/to/relaibotix-skill-detector/outputs \
+  --output predicted.h5
+```
+
+Bottle and sorting each reuse one checkpoint across simulation, real hardware,
+policies, and payload variations. Model weights are not copied into this
+repository. For an explicit custom checkpoint, `--input-profile auto` is the
+default; `--input-profile real-franka` can force the adapter when older files do
+not contain the expected source-format metadata.
 
 ```bash
 relaibotix skills infer canonical.h5 \
@@ -266,6 +296,13 @@ failure probability = 1 - exp(-hazard)
 This is an explicit relative-exposure model. RelAIBotiX does not claim that the
 example thresholds or multipliers are universally valid robot parameters.
 
+Two exposure calculations are available. `bands` assigns each active interval to
+the configured low, medium, or high multiplier. `continuous` linearly interpolates
+the factor at every active timestamp between the same configured thresholds and
+multipliers, then caps it at the high multiplier. Distance is treated in the same
+way using the mean distance per skill occurrence. The chosen method is saved in
+`reliability.json`, each component row, and publication provenance.
+
 Create the behavioral tables first, then build the per-skill fault trees and the
 empirical DTMC:
 
@@ -273,8 +310,13 @@ empirical DTMC:
 relaibotix reliability artifacts/behavior/behavior.json \
   --config configs/robots/so_arm.json \
   --output artifacts/reliability \
+  --exposure-model continuous \
   --sensitivity
 ```
+
+Omit `--exposure-model` (or select `bands`) to reproduce the existing banded
+calculation. Publication manifests can set `"exposure_model": "continuous"` for
+each experiment.
 
 This writes the component exposure and failure calculations, bottom-up and BDD
 skill probabilities, the solved system DTMC, and `model.pm`/`model.pctl` for PRISM.
@@ -301,7 +343,9 @@ are never normalized against the analyzed dataset.
 multiplies one component's base failure probability by ten, reruns the complete
 fault-tree and DTMC calculation, restores that component, and repeats for every
 component. The resulting `sensitivity.csv` and `sensitivity.json` rank components by
-the absolute change in overall failure probability. Pass another factor explicitly,
+the absolute change in overall failure probability. A publication-ready
+`sensitivity_spider.svg` shows the system failure-probability ratio produced by each
+one-at-a-time perturbation. Pass another factor explicitly,
 for example `--sensitivity 5`, when required. Exposure measurements and all other
 component probabilities remain unchanged during each perturbation.
 
@@ -320,6 +364,15 @@ Exact arithmetic is the default for both PRISM and STORM. Use
 `--prism-executable` when the binaries are not on the normal executable path.
 Both tools consume the exported `.pm` and `.pctl` models and are checked against
 the internal solver.
+
+On systems using the official STORM Docker image, no wrapper script is needed:
+
+```bash
+relaibotix reliability artifacts/behavior/behavior.json \
+  --config configs/robots/so_arm.json \
+  --output artifacts/reliability \
+  --storm --storm-executable docker://movesrwth/storm:stable
+```
 
 RelAIBotiX also exports `model_repeated_runs.pm`. In that model, completing one
 recorded run returns to the start state while modeled component failures remain
@@ -343,6 +396,16 @@ hashes and solver versions. The manifest explicitly uses predictions already sto
 in the legacy HDF5 recordings so the previous experiments can be recalculated. New
 case-study data must use `relaibotix run`, which performs skill inference before the
 behavioral and reliability stages.
+
+Each experiment can also declare `episode_selection` (`all` or `successful`),
+`terminal_skill` (a skill name or ID), and `exclude_missing_terminal` (boolean).
+These fields make the paper's run-selection and stopping rules explicit and are
+copied into `provenance.json`. Their defaults retain every complete recording and
+do not silently exclude episodes.
+
+Set `keep_missing_terminal` to `true` when episodes containing the terminal skill
+should be trimmed at that skill while retained pick-only episodes should keep their
+complete observed duration.
 
 ## Current case-study scope
 

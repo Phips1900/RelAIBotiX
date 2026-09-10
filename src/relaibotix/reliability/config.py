@@ -71,6 +71,7 @@ class ComponentConfig:
     exposure: str = "skill_time"
     distance_thresholds: tuple[float, float] | None = None
     distance_unit: str | None = None
+    exposure_references: Mapping[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.name or not self.component_type:
@@ -91,6 +92,13 @@ class ComponentConfig:
                 raise ValueError(
                     f"Distance thresholds for '{self.name}' must satisfy 0 <= medium < high."
                 )
+        unknown_references = set(self.exposure_references) - {"velocity", "effort", "distance"}
+        if unknown_references:
+            raise ValueError(
+                f"Unknown exposure references for '{self.name}': {sorted(unknown_references)}"
+            )
+        if any(value <= 0.0 for value in self.exposure_references.values()):
+            raise ValueError(f"Exposure references for '{self.name}' must be positive.")
 
 
 @dataclass(frozen=True)
@@ -320,6 +328,12 @@ def load_robot_config(path: str | Path) -> RobotConfig:
                 raise ValueError(
                     f"Component '{name}' requires distance_unit with distance_thresholds."
                 )
+        raw_references = definition.get("exposure_references", {})
+        if not isinstance(raw_references, Mapping):
+            raise ValueError(f"Component '{name}' exposure_references must be an object.")
+        exposure_references = {
+            str(signal): float(value) for signal, value in raw_references.items()
+        }
         components[str(name)] = ComponentConfig(
             name=str(name),
             component_type=str(definition["type"]),
@@ -336,6 +350,7 @@ def load_robot_config(path: str | Path) -> RobotConfig:
                 if definition.get("distance_unit") is not None
                 else None
             ),
+            exposure_references=exposure_references,
         )
     return RobotConfig(
         robot_id=str(robot["id"]),

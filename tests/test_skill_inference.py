@@ -42,9 +42,11 @@ def _install_fake_detector(monkeypatch):
         device,
         minimum_frames,
         transition_profile="none",
+        input_profile="none",
     ):
         shutil.copy2(input_path, output_path)
         with h5py.File(output_path, "r+") as output:
+            output.attrs["received_input_profile"] = input_profile
             for episode in output["data"].values():
                 labels = episode["labels"]
                 predicted = labels.create_dataset("predicted_skill_id", data=[1, 2, 2])
@@ -82,6 +84,7 @@ def test_inference_delegates_and_preserves_source(tmp_path, monkeypatch):
         assert "labels/predicted_skill_id" not in source["data/demo_000000"]
     with h5py.File(output_path, "r") as output:
         assert output["data/demo_000000/labels/filtered_skill_id"][:].tolist() == [1, 1, 2]
+        assert output.attrs["received_input_profile"] == "auto"
 
 
 def test_auto_device_falls_back_to_cpu_for_mps_restore_error(tmp_path, monkeypatch):
@@ -91,11 +94,15 @@ def test_auto_device_falls_back_to_cpu_for_mps_restore_error(tmp_path, monkeypat
     original = timeseries.predict_timeseries
     devices = []
 
-    def fail_mps_then_predict(*args):
+    def fail_mps_then_predict(*args, transition_profile="none", input_profile="none"):
         devices.append(args[5])
         if args[5] == "auto":
             raise RuntimeError("Invalid buffer size while restoring MPS storage")
-        return original(*args)
+        return original(
+            *args,
+            transition_profile=transition_profile,
+            input_profile=input_profile,
+        )
 
     timeseries.predict_timeseries = fail_mps_then_predict
     input_path = tmp_path / "input.h5"
@@ -139,7 +146,7 @@ def test_camera_and_hybrid_require_video_root(tmp_path):
 
 def test_bundled_registry_auto_selects_mobile_lstm(tmp_path):
     registry = load_registry()
-    assert len(registry.detectors) == 10
+    assert len(registry.detectors) == 12
     mobile = registry.detectors["mobile-lstm"]
     input_path = tmp_path / "mobile.h5"
     with h5py.File(input_path, "w") as output:
@@ -196,6 +203,35 @@ def test_task_selects_calibrated_franka_detector(tmp_path):
     assert selected.detector_id == "franka-sim-bottle-transformer"
     assert selected.minimum_skill_frames == 10
     assert selected.transition_profile == "franka-manipulation"
+
+
+def test_real_franka_reuses_task_checkpoint_with_automatic_input_adapter(tmp_path):
+    registry = load_registry()
+    simulated = registry.detectors["franka-sim-bottle-transformer"]
+    real = registry.detectors["franka-real-bottle-transformer"]
+    input_path = tmp_path / "real_franka.h5"
+    with h5py.File(input_path, "w") as output:
+        output.attrs["source_format"] = "real-franka-flat-hdf5-and-lerobot"
+        episode = output.create_group("data/demo_000000")
+        features = episode.create_dataset(
+            "features", data=np.zeros((2, len(real.required_features)))
+        )
+        features.attrs["feature_names"] = real.required_features
+        episode.create_dataset("timestamps/sim", data=[0.0, 0.05])
+        episode.create_dataset("labels/skill_id", data=[-1, -1])
+
+    selected = select_detector(
+        registry,
+        input_path,
+        case_study="franka_real",
+        task="bottle_task",
+    )
+
+    assert selected == real
+    assert real.checkpoint == simulated.checkpoint
+    assert real.minimum_skill_frames == 10
+    assert real.transition_profile == "franka-manipulation"
+    assert real.input_profile == "auto"
 
 
 def test_franka_task_specific_detectors_are_not_guessed_from_same_schema(tmp_path):

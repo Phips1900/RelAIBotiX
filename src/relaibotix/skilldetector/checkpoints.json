@@ -105,6 +105,28 @@
       "transition_profile": "franka-manipulation",
       "recommended": true
     },
+    "franka-real-bottle-transformer": {
+      "case_study": "franka_real",
+      "task": "bottle_task",
+      "modality": "timeseries",
+      "checkpoint": "franka-bottle-transformer-position-calibrated-v2/best.pt",
+      "feature_schema": "franka_position_v1",
+      "minimum_skill_frames": 10,
+      "transition_profile": "franka-manipulation",
+      "input_profile": "auto",
+      "recommended": true
+    },
+    "franka-real-sorting-transformer": {
+      "case_study": "franka_real",
+      "task": "sorting_task",
+      "modality": "timeseries",
+      "checkpoint": "franka-sorting-transformer-position-calibrated/best.pt",
+      "feature_schema": "franka_position_v1",
+      "minimum_skill_frames": 5,
+      "transition_profile": "franka-manipulation",
+      "input_profile": "auto",
+      "recommended": true
+    },
     "franka-sim-r3d18-frontview": {
       "case_study": "franka_sim",
       "modality": "camera",

@@ -255,6 +255,10 @@ class MainWindow(QMainWindow):
     def _analysis_group(self) -> QGroupBox:
         group = QGroupBox("3. Reliability analysis")
         form = QFormLayout(group)
+        self.exposure_model = QComboBox()
+        self.exposure_model.addItem("Low / medium / high bands", "bands")
+        self.exposure_model.addItem("Continuous interpolation", "continuous")
+        form.addRow("Exposure calculation", self.exposure_model)
         self.sensitivity = QCheckBox("Run component sensitivity analysis")
         self.sensitivity.setChecked(True)
         self.sensitivity_factor = QDoubleSpinBox()
@@ -370,6 +374,7 @@ class MainWindow(QMainWindow):
             "run", self.input_path.text(), "--config", self._selected_config(),
             "--output", self.output_path.text(), "--modality", self.modality_box.currentText(),
             "--device", self.device_box.currentText(),
+            "--exposure-model", str(self.exposure_model.currentData()),
         ]
         legacy = self.legacy_predictions.isChecked()
         detector = self.detector_box.currentData()

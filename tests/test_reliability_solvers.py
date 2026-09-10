@@ -1,4 +1,6 @@
 import json
+from decimal import Decimal
+import re
 
 import numpy as np
 import pytest
@@ -19,6 +21,7 @@ from relaibotix.reliability.solver import create_mc_transition_matrix, solve_mc
 from relaibotix.reliability.graph import create_mc_graph
 from relaibotix.reliability.storm import run_storm
 from relaibotix.reliability.prism_backend import run_prism
+from relaibotix.reliability.prism import export_prism_from_mc, export_prism_no_done
 from types import SimpleNamespace
 
 
@@ -128,6 +131,22 @@ def test_markov_solver_does_not_mutate_state_lists():
 
     create_mc_graph(chain)
     assert chain.states == ["run"]
+
+
+@pytest.mark.parametrize("exporter", [export_prism_from_mc, export_prism_no_done])
+def test_prism_export_rows_sum_exactly_in_decimal_arithmetic(exporter):
+    chain = _SmallMarkovChain()
+    chain.transitions["run"] = {
+        "failed": 9.479824330000001e-08,
+        "done": 0.9999999052017567,
+    }
+
+    model, _ = exporter(chain, precision=16)
+    for line in model.splitlines():
+        if "->" not in line:
+            continue
+        probabilities = re.findall(r"(?:->|\+)\s*([0-9.]+)\s*:", line)
+        assert sum(Decimal(value) for value in probabilities) == Decimal(1)
 
 
 def test_existing_robot_config_defines_measured_components_and_redundancy():
@@ -242,6 +261,26 @@ def test_expert_exposure_assumptions_are_loaded(tmp_path):
     assert assumptions.distance_multipliers == pytest.approx((1.0, 1.5, 2.0))
 
 
+def test_component_exposure_references_are_loaded_and_validated(tmp_path):
+    path = tmp_path / "robot.json"
+    component = {
+        "type": "revolute_joint",
+        "features": {"position": "joint_pos_1"},
+        "failure_probability": 0.1,
+        "redundancy": {"copies": 1, "mode": "parallel"},
+        "exposure_references": {"velocity": 2.0, "effort": 10.0, "distance": 6.0},
+    }
+    _write_robot_config(path, {"joint_1": component})
+
+    references = load_robot_config(path).components["joint_1"].exposure_references
+    assert references == {"velocity": 2.0, "effort": 10.0, "distance": 6.0}
+
+    component["exposure_references"] = {"effort": 0.0}
+    _write_robot_config(path, {"joint_1": component})
+    with pytest.raises(ValueError, match="must be positive"):
+        load_robot_config(path)
+
+
 def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
     behavior = BehavioralResult(
         segments=pd.DataFrame([
@@ -323,6 +362,69 @@ def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
         >= sensitivity["baseline_system_failure_probability"]
     ).all()
     assert sensitivity["absolute_system_probability_change"].is_monotonic_decreasing
+
+
+def test_continuous_exposure_interpolates_without_band_steps(tmp_path):
+    behavior = BehavioralResult(
+        segments=pd.DataFrame([
+            {"episode_key": "demo_0", "skill_id": 1, "start_index": 0},
+            {"episode_key": "demo_1", "skill_id": 1, "start_index": 1},
+        ]),
+        joint_metrics=pd.DataFrame(),
+        skill_summary=pd.DataFrame([{
+            "skill_id": 1, "skill": "move", "n_segments": 2,
+            "total_duration": 20.0,
+        }]),
+        joint_summary=pd.DataFrame([{
+            "skill_id": 1, "skill": "move", "joint": "j1",
+            "total_active_time": 8.0,
+            "velocity_time_low": 2.0,
+            "velocity_time_medium": 2.0,
+            "velocity_time_high": 2.0,
+            "velocity_weighted_time_continuous": 7.0,
+            "effort_time_low": 2.0,
+            "effort_time_medium": 0.0,
+            "effort_time_high": 2.0,
+            "effort_weighted_time_continuous": 10.0,
+            "total_traveled_distance": 4.0,
+        }]),
+        metadata={
+            "component_exposure_references": {},
+            "continuous_exposure_multipliers": {
+                "velocity": [1.0, 2.0, 5.0],
+                "effort": [1.0, 1.25, 1.75],
+            },
+        },
+    )
+    config_path = tmp_path / "robot.json"
+    _write_robot_config(config_path, {
+        "joint_1": {
+            "type": "revolute_joint",
+            "features": {"position": "joint_pos_1", "velocity": "joint_vel_1"},
+            "failure_probability": 0.01,
+            "redundancy": {"copies": 1, "mode": "parallel"},
+            "distance_thresholds": [1.0, 3.0],
+            "distance_unit": "radian",
+        },
+    })
+
+    result = analyze_reliability(
+        behavior,
+        load_robot_config(config_path),
+        exposure_model="continuous",
+    )
+    row = result.component_failures.iloc[0]
+
+    assert result.exposure_model == "continuous"
+    assert row["velocity_factor"] == pytest.approx(3.5 / 3.0)
+    assert row["effort_factor"] == pytest.approx(2.5)
+    assert row["distance_factor"] == pytest.approx(1.75)
+    assert row["effective_exposure"] == pytest.approx(15.3125)
+    assert len(analyze_component_sensitivity(
+        behavior,
+        load_robot_config(config_path),
+        baseline=result,
+    )) == 1
 
 
 def test_sensitivity_factor_is_validated(tmp_path):
@@ -433,6 +535,43 @@ def test_storm_backend_parses_one_result_per_property(tmp_path, monkeypatch):
     ]
     assert captured["options"]["timeout"] == 120.0
     assert result.version == "1.14.0"
+
+
+def test_storm_backend_supports_official_docker_image(tmp_path, monkeypatch):
+    model = tmp_path / "model.pm"
+    properties = tmp_path / "model.pctl"
+    model.write_text("dtmc\n")
+    properties.write_text('P=? [ F "failure" ]\n')
+    captured = {}
+
+    monkeypatch.setattr(
+        "relaibotix.reliability.storm.shutil.which",
+        lambda executable: "/usr/bin/docker" if executable == "docker" else None,
+    )
+
+    def fake_run(command, **options):
+        captured["command"] = command
+        return SimpleNamespace(
+            returncode=0,
+            stdout="Storm 1.14.0\nResult (for initial states): 1/8\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("relaibotix.reliability.storm.subprocess.run", fake_run)
+    result = run_storm(
+        model,
+        properties,
+        executable="docker://movesrwth/storm:stable",
+        exact=True,
+    )
+
+    assert result.values == (0.125,)
+    assert result.executable == "docker://movesrwth/storm:stable"
+    assert captured["command"] == [
+        "/usr/bin/docker", "run", "--rm", "-v",
+        f"{tmp_path.resolve()}:/models:ro", "movesrwth/storm:stable", "storm",
+        "--prism", "/models/model.pm", "--prop", 'P=? [ F "failure" ]', "--exact",
+    ]
 
 
 def test_prism_backend_parses_exact_results_and_version(tmp_path, monkeypatch):

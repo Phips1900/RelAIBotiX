@@ -11,7 +11,6 @@ from matplotlib import colormaps
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch
-from matplotlib.ticker import ScalarFormatter
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtWidgets import (
     QComboBox,
@@ -105,10 +104,11 @@ class PlotPanel(QWidget):
         layout.addWidget(self.canvas, 1)
         self.message("Run an analysis to generate this plot.")
 
-    def axes(self):
+    def axes(self, *, projection=None):
         self.figure.clear()
-        axes = self.figure.add_subplot(111)
-        axes.grid(axis="y", color=_GRID, linewidth=0.7, alpha=0.65)
+        axes = self.figure.add_subplot(111, projection=projection)
+        if projection != "polar":
+            axes.grid(axis="y", color=_GRID, linewidth=0.7, alpha=0.65)
         axes.set_axisbelow(True)
         return axes
 
@@ -411,19 +411,23 @@ class ResultsView(QTabWidget):
         if values.empty:
             self.sensitivity.message("Sensitivity analysis was not requested for this run.")
             return
-        values = values.sort_values("absolute_system_probability_change")
-        axes = self.sensitivity.axes()
-        axes.barh(
-            values["component"].astype(str).str.replace("_", " "),
-            values["absolute_system_probability_change"],
-            color=_BLUE,
-        )
+        import numpy as np
+
+        values = values.sort_values("component")
+        labels = values["component"].astype(str).str.replace("_", " ").tolist()
+        ratios = values["system_probability_ratio"].astype(float).tolist()
+        angles = np.linspace(0.0, 2.0 * np.pi, len(labels), endpoint=False).tolist()
+        angles += angles[:1]
+        ratios += ratios[:1]
+        axes = self.sensitivity.axes(projection="polar")
+        axes.plot(angles, ratios, color=_BLUE, linewidth=2)
+        axes.fill(angles, ratios, color=_BLUE, alpha=0.18)
+        axes.set_xticks(angles[:-1], labels)
+        axes.set_ylim(bottom=0.0)
         factor = float(values["requested_factor"].iloc[0])
-        axes.set_title(f"Component sensitivity to a ×{factor:g} base-probability change")
-        axes.set_xlabel("Absolute change in system failure probability")
-        formatter = ScalarFormatter(useMathText=True)
-        formatter.set_powerlimits((-2, 2))
-        axes.xaxis.set_major_formatter(formatter)
-        axes.grid(axis="x", color=_GRID, linewidth=0.7, alpha=0.65)
-        axes.grid(axis="y", visible=False)
+        axes.set_title(
+            f"Failure-probability ratio after a ×{factor:g} component perturbation",
+            pad=22,
+        )
+        axes.grid(color=_GRID, linewidth=0.7, alpha=0.65)
         self.sensitivity.canvas.draw_idle()

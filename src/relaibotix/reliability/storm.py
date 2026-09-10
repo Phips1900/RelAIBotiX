@@ -44,12 +44,6 @@ def run_storm(
 ) -> StormResult:
     """Run STORM on a PRISM model and return numeric property results."""
 
-    resolved = shutil.which(executable)
-    if resolved is None:
-        raise RuntimeError(
-            f"STORM executable '{executable}' was not found. Install STORM or provide "
-            "--storm-executable."
-        )
     model = Path(prism_path)
     properties_file = Path(properties_path)
     properties = tuple(
@@ -57,7 +51,38 @@ def run_storm(
         for line in properties_file.read_text().splitlines()
         if line.strip() and not line.lstrip().startswith("//")
     )
-    command = [resolved, "--prism", str(model), "--prop", "; ".join(properties)]
+    if executable.startswith("docker://"):
+        image = executable.removeprefix("docker://").strip()
+        if not image:
+            raise ValueError("The STORM Docker image name must not be empty.")
+        resolved = shutil.which("docker")
+        if resolved is None:
+            raise RuntimeError("Docker was not found for the requested STORM container.")
+        model = model.resolve()
+        container_model = f"/models/{model.name}"
+        command = [
+            resolved,
+            "run",
+            "--rm",
+            "-v",
+            f"{model.parent}:/models:ro",
+            image,
+            "storm",
+            "--prism",
+            container_model,
+            "--prop",
+            "; ".join(properties),
+        ]
+        result_executable = executable
+    else:
+        resolved = shutil.which(executable)
+        if resolved is None:
+            raise RuntimeError(
+                f"STORM executable '{executable}' was not found. Install STORM or provide "
+                "--storm-executable."
+            )
+        command = [resolved, "--prism", str(model), "--prop", "; ".join(properties)]
+        result_executable = resolved
     if exact:
         command.append("--exact")
     completed = subprocess.run(
@@ -87,7 +112,7 @@ def run_storm(
     stdout = completed.stdout
     version_match = re.search(r"^Storm\s+([^\s]+)", stdout, re.MULTILINE)
     return StormResult(
-        resolved,
+        result_executable,
         properties,
         values,
         stdout,

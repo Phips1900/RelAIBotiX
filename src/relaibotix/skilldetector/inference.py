@@ -52,6 +52,7 @@ def run_inference(
     device: str = "auto",
     minimum_skill_frames: int = 5,
     transition_profile: str = "none",
+    input_profile: str = "auto",
     target_stride: int = 1,
 ) -> InferenceResult:
     """Run a detector checkpoint and write predictions to a separate HDF5 copy.
@@ -79,14 +80,23 @@ def run_inference(
                 selected_device,
                 minimum_skill_frames,
             )
-            if "transition_profile" in inspect.signature(predict_timeseries).parameters:
-                return predict_timeseries(*arguments, transition_profile=transition_profile)
-            if transition_profile != "none":
+            parameters = inspect.signature(predict_timeseries).parameters
+            keyword_arguments: dict[str, str] = {}
+            if "transition_profile" in parameters:
+                keyword_arguments["transition_profile"] = transition_profile
+            elif transition_profile != "none":
                 raise RuntimeError(
                     "This detector profile requires a newer relaibotix-skill-detector "
                     "package with transition-profile support."
                 )
-            return predict_timeseries(*arguments)
+            if "input_profile" in parameters:
+                keyword_arguments["input_profile"] = input_profile
+            elif input_profile != "none":
+                raise RuntimeError(
+                    "This input requires a newer relaibotix-skill-detector package "
+                    "with real-Franka input-profile support."
+                )
+            return predict_timeseries(*arguments, **keyword_arguments)
         if modality == "camera":
             if lerobot_root is None:
                 raise ValueError("Camera inference requires --lerobot-root.")

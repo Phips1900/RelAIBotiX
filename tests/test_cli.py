@@ -128,6 +128,39 @@ def test_h5_convert_command(tmp_path, capsys):
     assert "VALID:" in text
 
 
+def test_h5_select_excludes_episode_and_preserves_keys(tmp_path):
+    source = tmp_path / "source.h5"
+    output = tmp_path / "selected.h5"
+    with h5py.File(source, "w") as h5_file:
+        h5_file.attrs["format"] = "relaibotix_skill_hdf5"
+        h5_file.attrs["format_version"] = 1
+        data = h5_file.create_group("data")
+        for index in range(3):
+            episode = data.create_group(f"demo_{index:06d}")
+            features = episode.create_dataset("features", data=np.zeros((2, 3)))
+            features.attrs["feature_names"] = [
+                "joint_pos_1", "joint_vel_1", "unused_nan"
+            ]
+            episode.create_dataset("timestamps/sim", data=[0.0, 0.1])
+
+    assert main([
+        "h5", "select", str(source), str(output),
+        "--exclude-episode", "demo_000001",
+        "--drop-feature", "unused_nan",
+    ]) == 0
+
+    with h5py.File(output) as selected:
+        assert list(selected["data"]) == ["demo_000000", "demo_000002"]
+        assert selected.attrs["episode_count"] == 2
+        assert json.loads(selected.attrs["selection_excluded_episode_keys_json"]) == [
+            "demo_000001"
+        ]
+        assert selected["data/demo_000000/features"].shape == (2, 2)
+        assert list(selected["data/demo_000000/features"].attrs["feature_names"]) == [
+            "joint_pos_1", "joint_vel_1"
+        ]
+
+
 def test_behavior_command(tmp_path):
     input_path = tmp_path / "labeled.h5"
     output_path = tmp_path / "behavior"
@@ -201,6 +234,14 @@ def test_skills_list_command(capsys):
     assert (
         "franka-sim-sorting-transformer: franka_sim, timeseries [recommended], "
         "task=sorting_task, min_frames=5"
+    ) in output
+    assert (
+        "franka-real-bottle-transformer: franka_real, timeseries [recommended], "
+        "task=bottle_task, min_frames=10, input_profile=auto"
+    ) in output
+    assert (
+        "franka-real-sorting-transformer: franka_real, timeseries [recommended], "
+        "task=sorting_task, min_frames=5, input_profile=auto"
     ) in output
 
 
@@ -304,6 +345,7 @@ def test_reliability_command(tmp_path):
     assert (output_path / "model_repeated_runs.pctl").is_file()
     assert (output_path / "sensitivity.csv").is_file()
     assert (output_path / "sensitivity.json").is_file()
+    assert (output_path / "sensitivity_spider.svg").is_file()
     reliability = json.loads((output_path / "reliability.json").read_text())
     assert reliability["repeated_run_mttf"]["hours"] > 0.0
 
@@ -331,6 +373,10 @@ def test_experiments_command_writes_publication_outputs(tmp_path):
             "scope": "included",
             "skill_names": {"0": "Move", "1": "Place"},
             "label_source": "existing_detector_predictions",
+            "episode_selection": "all",
+            "terminal_skill": "Place",
+            "exclude_missing_terminal": True,
+            "exposure_model": "continuous",
         }, {
             "id": "optional_policy",
             "setting": "CS-optional",
@@ -352,6 +398,8 @@ def test_experiments_command_writes_publication_outputs(tmp_path):
         "--output",
         str(output_path),
         "--exclude-optional",
+        "--exposure-model",
+        "continuous",
     ]) == 0
 
     experiment = output_path / "test_policy"
@@ -366,11 +414,17 @@ def test_experiments_command_writes_publication_outputs(tmp_path):
         "provenance.json",
     ):
         assert (output_path / filename).is_file()
-    assert "Move" in (experiment / "behavior" / "behavior.json").read_text()
+    assert "Place" in (experiment / "behavior" / "behavior.json").read_text()
     assert "MTTF (h)" in (output_path / "paper_results.tex").read_text()
+    assert "Travel/run" not in (output_path / "paper_results.tex").read_text()
     provenance = json.loads((output_path / "provenance.json").read_text())
     assert provenance["solvers"]["internal"]["enabled"] is True
     assert provenance["experiments"][0]["input_sha256"]
+    assert provenance["experiments"][0]["episode_selection"] == "all"
+    assert provenance["experiments"][0]["terminal_skill"] == "Place"
+    assert provenance["experiments"][0]["exclude_missing_terminal"] is True
+    assert provenance["experiments"][0]["exposure_model"] == "continuous"
+    assert provenance["method"]["exposure_models"] == ["continuous"]
     assert len(provenance["experiments"]) == 1
 
 

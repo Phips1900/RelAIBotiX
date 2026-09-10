@@ -28,11 +28,13 @@ class ReliabilityResult:
     exposure_assumptions: dict[str, object]
     failure_probability_source: str
     behavior_thresholds_verified: bool | None
+    exposure_model: str
 
     def write_json(self, output_path: str | Path) -> Path:
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         payload = {
+            "exposure_model": self.exposure_model,
             "exposure_assumptions": self.exposure_assumptions,
             "failure_probability_source": self.failure_probability_source,
             "behavior_thresholds_verified": self.behavior_thresholds_verified,
@@ -120,12 +122,36 @@ def _distance_exposure(
     return "high", multipliers[2]
 
 
+def _continuous_exposure_factor(
+    value: float,
+    thresholds: tuple[float, float] | None,
+    multipliers: tuple[float, float, float],
+) -> float:
+    """Interpolate between three exposure anchors and cap above the last one."""
+
+    if thresholds is None or not math.isfinite(value):
+        return 1.0
+    medium, high = thresholds
+    value = max(0.0, value)
+    if value <= medium:
+        fraction = value / medium if medium > 0.0 else 1.0
+        return multipliers[0] + fraction * (multipliers[1] - multipliers[0])
+    if value <= high:
+        fraction = (value - medium) / (high - medium)
+        return multipliers[1] + fraction * (multipliers[2] - multipliers[1])
+    return multipliers[2]
+
+
 def analyze_reliability(
     behavior: BehavioralResult,
     config: RobotConfig,
+    *,
+    exposure_model: str = "bands",
 ) -> ReliabilityResult:
     """Create and solve one component fault tree for every observed skill."""
 
+    if exposure_model not in {"bands", "continuous"}:
+        raise ValueError("Exposure model must be 'bands' or 'continuous'.")
     assumptions = config.exposure_assumptions
     expected_thresholds = {
         key: value
@@ -146,6 +172,37 @@ def analyze_reliability(
             raise ValueError(
                 "Behavioral results used different exposure thresholds. "
                 "Run the behavior command again with the same robot configuration."
+            )
+    expected_references = {
+        name: dict(component.exposure_references)
+        for name, component in config.components.items()
+        if component.exposure_references
+    }
+    recorded_references = behavior.metadata.get("component_exposure_references", {})
+    if recorded_references != expected_references:
+        raise ValueError(
+            "Behavioral results used different component exposure references. "
+            "Run the behavior command again with the same robot configuration."
+        )
+    if exposure_model == "continuous":
+        expected_multipliers = {
+            "velocity": list(assumptions.velocity_multipliers),
+            "effort": list(assumptions.effort_multipliers),
+        }
+        if behavior.metadata.get("continuous_exposure_multipliers") != expected_multipliers:
+            raise ValueError(
+                "Behavioral results do not contain continuous exposure values for the "
+                "configured multipliers. Run the behavior command again with the same "
+                "robot configuration."
+            )
+        required_continuous = {
+            "velocity_weighted_time_continuous",
+            "effort_weighted_time_continuous",
+        }
+        if not required_continuous.issubset(behavior.joint_summary.columns):
+            raise ValueError(
+                "Behavioral results do not contain continuous weighted-time columns. "
+                "Run the behavior command again."
             )
     required_skill_columns = {"skill_id", "skill", "n_segments", "total_duration"}
     if not required_skill_columns.issubset(behavior.skill_summary.columns):
@@ -183,18 +240,36 @@ def analyze_reliability(
                 if not usage.empty
                 else 0.0
             )
+            average_distance_utilization = (
+                float(
+                    usage.get(
+                        "total_traveled_distance_utilization", pd.Series(dtype=float)
+                    ).sum()
+                )
+                / occurrences
+                if not usage.empty and "distance" in component.exposure_references
+                else float("nan")
+            )
 
             if component.exposure == "skill_time":
                 base_exposure = average_duration
                 weighted_velocity_exposure = average_duration
             else:
-                weighted_velocity_exposure = sum(
-                    duration * multiplier
-                    for duration, multiplier in zip(
-                        velocity_times, assumptions.velocity_multipliers
-                    )
-                )
                 base_exposure = sum(velocity_times)
+                if exposure_model == "bands":
+                    weighted_velocity_exposure = sum(
+                        duration * multiplier
+                        for duration, multiplier in zip(
+                            velocity_times, assumptions.velocity_multipliers
+                        )
+                    )
+                else:
+                    weighted_velocity_exposure = (
+                        float(usage["velocity_weighted_time_continuous"].sum())
+                        / occurrences
+                        if not usage.empty
+                        else 0.0
+                    )
                 if weighted_velocity_exposure == 0.0:
                     base_exposure = average_active
                     weighted_velocity_exposure = average_active
@@ -202,22 +277,43 @@ def analyze_reliability(
             effort_total = sum(effort_times)
             effort_factor = 1.0
             if effort_total > 0.0:
-                effort_factor = sum(
-                    duration * multiplier
-                    for duration, multiplier in zip(
-                        effort_times, assumptions.effort_multipliers
+                if exposure_model == "bands":
+                    effort_weighted_exposure = sum(
+                        duration * multiplier
+                        for duration, multiplier in zip(
+                            effort_times, assumptions.effort_multipliers
+                        )
                     )
-                ) / effort_total
+                else:
+                    effort_weighted_exposure = (
+                        float(usage["effort_weighted_time_continuous"].sum())
+                        / occurrences
+                    )
+                effort_factor = effort_weighted_exposure / effort_total
             velocity_factor = (
                 weighted_velocity_exposure / base_exposure
                 if base_exposure > 0.0
                 else 1.0
             )
             distance_band, distance_factor = _distance_exposure(
-                average_distance,
+                (
+                    average_distance_utilization
+                    if "distance" in component.exposure_references
+                    else average_distance
+                ),
                 component.distance_thresholds,
                 assumptions.distance_multipliers,
             )
+            if exposure_model == "continuous":
+                distance_factor = _continuous_exposure_factor(
+                    (
+                        average_distance_utilization
+                        if "distance" in component.exposure_references
+                        else average_distance
+                    ),
+                    component.distance_thresholds,
+                    assumptions.distance_multipliers,
+                )
             effective_exposure = weighted_velocity_exposure * effort_factor * distance_factor
             rate = _hazard_rate(component.failure_probability, config.probability_basis)
             hazard = rate * effective_exposure
@@ -228,9 +324,11 @@ def analyze_reliability(
                 "skill": skill,
                 "component": name,
                 "exposure_mode": component.exposure,
+                "exposure_model": exposure_model,
                 "average_skill_duration": average_duration,
                 "average_active_time": average_active,
                 "average_traveled_distance": average_distance,
+                "average_traveled_distance_utilization": average_distance_utilization,
                 "distance_unit": component.distance_unit,
                 "distance_medium_threshold": (
                     component.distance_thresholds[0]
@@ -299,6 +397,7 @@ def analyze_reliability(
         exposure_assumptions=assumptions.as_dict(),
         failure_probability_source=config.probability_source,
         behavior_thresholds_verified=thresholds_verified,
+        exposure_model=exposure_model,
     )
 
 
@@ -308,12 +407,22 @@ def analyze_component_sensitivity(
     *,
     factor: float = 10.0,
     baseline: ReliabilityResult | None = None,
+    exposure_model: str | None = None,
 ) -> pd.DataFrame:
     """Rank one-at-a-time component perturbations by system-level influence."""
 
     if not math.isfinite(factor) or factor <= 0.0 or factor == 1.0:
         raise ValueError("Sensitivity factor must be positive and different from one.")
-    baseline_result = baseline or analyze_reliability(behavior, config)
+    selected_exposure_model = exposure_model or (
+        baseline.exposure_model if baseline is not None else "bands"
+    )
+    baseline_result = baseline or analyze_reliability(
+        behavior,
+        config,
+        exposure_model=selected_exposure_model,
+    )
+    if baseline_result.exposure_model != selected_exposure_model:
+        raise ValueError("Sensitivity exposure model does not match the baseline result.")
     baseline_probability = baseline_result.dtmc_solution.failure_probability
     rows: list[dict[str, object]] = []
 
@@ -325,7 +434,11 @@ def analyze_component_sensitivity(
             failure_probability=perturbed_probability,
         )
         perturbed_config = replace(config, components=perturbed_components)
-        result = analyze_reliability(behavior, perturbed_config)
+        result = analyze_reliability(
+            behavior,
+            perturbed_config,
+            exposure_model=selected_exposure_model,
+        )
         system_probability = result.dtmc_solution.failure_probability
         absolute_change = system_probability - baseline_probability
         relative_change = (

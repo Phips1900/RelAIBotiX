@@ -12,7 +12,7 @@ from typing import Sequence
 
 from .behavioral import BehavioralAnalyzer
 from .behavioral.results import BehavioralResult
-from .data import convert_h5, inspect_h5, validate_h5
+from .data import convert_h5, inspect_h5, select_h5_episodes, validate_h5
 
 
 def _print_summary(path: str | Path) -> None:
@@ -67,6 +67,28 @@ def _h5_parser() -> argparse.ArgumentParser:
     convert_parser.add_argument("input", type=Path)
     convert_parser.add_argument("output", type=Path)
     convert_parser.add_argument("--overwrite", action="store_true")
+
+    select_parser = commands.add_parser(
+        "select",
+        help="Write a canonical copy with explicitly excluded episodes removed.",
+    )
+    select_parser.add_argument("input", type=Path)
+    select_parser.add_argument("output", type=Path)
+    select_parser.add_argument(
+        "--exclude-episode",
+        action="append",
+        default=[],
+        metavar="KEY",
+        help="Episode group key to exclude; repeat for multiple episodes.",
+    )
+    select_parser.add_argument(
+        "--drop-feature",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Unavailable or unused feature column to remove; repeat as needed.",
+    )
+    select_parser.add_argument("--overwrite", action="store_true")
     return parser
 
 
@@ -77,6 +99,20 @@ def _run_h5(arguments: Sequence[str]) -> int:
         return 0
     if args.h5_command == "validate":
         return 0 if _print_validation(args.input, args.config) else 1
+
+    if args.h5_command == "select":
+        output = select_h5_episodes(
+            args.input,
+            args.output,
+            exclude_episode_keys=args.exclude_episode,
+            drop_feature_names=args.drop_feature,
+            overwrite=args.overwrite,
+        )
+        print(
+            f"Selected: {args.input} -> {output} "
+            f"({len(args.exclude_episode)} episodes excluded)"
+        )
+        return 0 if _print_validation(output) else 1
 
     output = convert_h5(args.input, args.output, overwrite=args.overwrite)
     print(f"Converted: {args.input} -> {output}")
@@ -128,6 +164,34 @@ def _behavior_parser() -> argparse.ArgumentParser:
             "raw predictions, then ground truth are tried in that order."
         ),
     )
+    parser.add_argument(
+        "--successful-only",
+        action="store_true",
+        help=(
+            "Analyze only canonical episodes whose task_success attribute is true. "
+            "Fails if the attribute is missing."
+        ),
+    )
+    parser.add_argument(
+        "--end-after-skill",
+        help="End each mission after the final occurrence of this skill name or ID.",
+    )
+    parser.add_argument(
+        "--exclude-missing-end-skill",
+        action="store_true",
+        help=(
+            "Explicitly exclude episodes missing --end-after-skill. By default, "
+            "a missing terminal skill is an error."
+        ),
+    )
+    parser.add_argument(
+        "--keep-missing-end-skill",
+        action="store_true",
+        help=(
+            "Keep the complete episode when --end-after-skill is absent, while "
+            "still trimming episodes where the terminal skill is detected."
+        ),
+    )
     return parser
 
 
@@ -154,10 +218,19 @@ def _run_behavior(arguments: Sequence[str]) -> int:
                 for name, component in robot_config.components.items()
                 if any(component.features.values())
             },
+            component_references={
+                name: component.exposure_references
+                for name, component in robot_config.components.items()
+                if component.exposure_references
+            },
         )
     result = analyzer.analyze_h5(
         args.input,
         skill_labels_dataset=args.skill_labels,
+        successful_only=args.successful_only,
+        end_after_skill=args.end_after_skill,
+        exclude_missing_end_skill=args.exclude_missing_end_skill,
+        keep_missing_end_skill=args.keep_missing_end_skill,
     )
     result.write_csv(args.output)
     result.write_json(args.output / "behavior.json")
@@ -198,6 +271,14 @@ def _skills_parser() -> argparse.ArgumentParser:
         type=int,
         help="Override the detector's calibrated minimum segment length.",
     )
+    parser.add_argument(
+        "--input-profile",
+        choices=("auto", "none", "real-franka"),
+        help=(
+            "Input adaptation for time-series inference. Registry selections use "
+            "their calibrated value; custom checkpoints default to auto."
+        ),
+    )
     parser.add_argument("--target-stride", type=int, default=1)
     return parser
 
@@ -226,10 +307,15 @@ def _run_skills(arguments: Sequence[str]) -> int:
                 availability = "checkpoint not installed"
             default = " [recommended]" if detector.recommended else ""
             task = f", task={detector.task}" if detector.task else ""
+            input_profile = (
+                f", input_profile={detector.input_profile}"
+                if detector.input_profile != "none"
+                else ""
+            )
             print(
                 f"{detector.detector_id}: {detector.case_study}, "
                 f"{detector.modality}{default}{task}, "
-                f"min_frames={detector.minimum_skill_frames} - {availability}"
+                f"min_frames={detector.minimum_skill_frames}{input_profile} - {availability}"
             )
         return 0
     if not arguments or arguments[0] != "infer":
@@ -260,6 +346,11 @@ def _run_skills(arguments: Sequence[str]) -> int:
         if args.minimum_skill_frames is not None
         else detector.minimum_skill_frames if detector is not None else 5
     )
+    input_profile = (
+        args.input_profile
+        if args.input_profile is not None
+        else detector.input_profile if detector is not None else "auto"
+    )
 
     result = run_inference(
         h5_path=args.input,
@@ -272,6 +363,7 @@ def _run_skills(arguments: Sequence[str]) -> int:
         device=args.device,
         minimum_skill_frames=minimum_skill_frames,
         transition_profile=detector.transition_profile if detector is not None else "none",
+        input_profile=input_profile,
         target_stride=args.target_stride,
     )
     print(
@@ -289,6 +381,12 @@ def _reliability_parser() -> argparse.ArgumentParser:
     parser.add_argument("behavior", type=Path, help="behavior.json produced by the behavior command")
     parser.add_argument("--config", type=Path, required=True, help="Robot reliability JSON")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--exposure-model",
+        choices=("bands", "continuous"),
+        default="bands",
+        help="Map observed motion to exposure with discrete bands or continuous interpolation.",
+    )
     parser.add_argument("--prism", action="store_true", help="Verify models with PRISM")
     parser.add_argument("--prism-executable", default="prism")
     parser.add_argument("--storm", action="store_true", help="Verify the PRISM model with STORM")
@@ -316,25 +414,30 @@ def _run_reliability(arguments: Sequence[str]) -> int:
     args = _reliability_parser().parse_args(arguments)
     behavior = BehavioralResult.read_json(args.behavior)
     config = load_robot_config(args.config)
-    result = analyze_reliability(behavior, config)
+    result = analyze_reliability(behavior, config, exposure_model=args.exposure_model)
     args.output.mkdir(parents=True, exist_ok=True)
     result.component_failures.to_csv(args.output / "component_failures.csv", index=False)
     result.skill_probabilities.to_csv(args.output / "skill_probabilities.csv", index=False)
     result.write_json(args.output / "reliability.json")
     if args.sensitivity is not None:
-        from .reliability import analyze_component_sensitivity
+        from .reliability import analyze_component_sensitivity, write_sensitivity_spider_svg
 
         sensitivity = analyze_component_sensitivity(
             behavior,
             config,
             factor=args.sensitivity,
             baseline=result,
+            exposure_model=args.exposure_model,
         )
         sensitivity.to_csv(args.output / "sensitivity.csv", index=False)
         (args.output / "sensitivity.json").write_text(
             sensitivity.to_json(orient="records", indent=2) + "\n"
         )
         if not sensitivity.empty:
+            write_sensitivity_spider_svg(
+                sensitivity,
+                args.output / "sensitivity_spider.svg",
+            )
             print(f"Most influential component: {sensitivity.iloc[0]['component']}")
     prism_path, properties_path = write_prism_and_props(result.dtmc, args.output / "model")
     repeated_path, repeated_properties = write_prism_no_done_and_props(
@@ -402,6 +505,7 @@ def _run_reliability(arguments: Sequence[str]) -> int:
         storm_mttf.write_json(args.output / "storm_mttf.json")
         print(f"STORM verified {len(storm_result.values) + len(storm_mttf.values)} properties")
     print(f"Reliability analysis: {len(result.skill_probabilities)} skills")
+    print(f"Exposure model: {result.exposure_model}")
     print(f"System failure probability: {result.dtmc_solution.failure_probability:.12g}")
     print(
         "Completion without modeled failure: "
@@ -427,6 +531,11 @@ def _experiments_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--storm-executable", default="storm")
     run_parser.add_argument("--approximate-solvers", action="store_true")
     run_parser.add_argument(
+        "--exposure-model",
+        choices=("bands", "continuous"),
+        help="Override the exposure model declared by every manifest experiment.",
+    )
+    run_parser.add_argument(
         "--exclude-optional",
         action="store_true",
         help="Skip experiments whose manifest scope is 'optional'.",
@@ -444,6 +553,14 @@ def _run_experiments(arguments: Sequence[str]) -> int:
 
     args = _experiments_parser().parse_args(arguments)
     manifest = load_experiment_manifest(args.manifest)
+    if args.exposure_model is not None:
+        manifest = replace(
+            manifest,
+            experiments=tuple(
+                replace(experiment, exposure_model=args.exposure_model)
+                for experiment in manifest.experiments
+            ),
+        )
     if args.exclude_optional:
         manifest = replace(
             manifest,
@@ -469,7 +586,11 @@ def _run_experiments(arguments: Sequence[str]) -> int:
             raise ValueError(f"Invalid experiment input: {experiment.experiment_id}")
         config = load_robot_config(experiment.robot_config)
         result = configured_analyzer(config, experiment.skill_names).analyze_h5(
-            experiment.input_h5
+            experiment.input_h5,
+            successful_only=experiment.episode_selection == "successful",
+            end_after_skill=experiment.terminal_skill,
+            exclude_missing_end_skill=experiment.exclude_missing_terminal,
+            keep_missing_end_skill=experiment.keep_missing_terminal,
         )
         behavior_output = args.output / experiment.experiment_id / "behavior"
         result.write_csv(behavior_output)
@@ -482,6 +603,8 @@ def _run_experiments(arguments: Sequence[str]) -> int:
             "--output",
             str(args.output / experiment.experiment_id / "reliability"),
             "--sensitivity",
+            "--exposure-model",
+            experiment.exposure_model,
         ]
         if args.prism:
             reliability_arguments.extend(
@@ -549,6 +672,11 @@ def _pipeline_parser() -> argparse.ArgumentParser:
     parser.add_argument("input", type=Path)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--exposure-model",
+        choices=("bands", "continuous"),
+        default="bands",
+    )
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--checkpoint", type=Path)
     selection.add_argument("--detector")
@@ -663,6 +791,8 @@ def _run_pipeline(arguments: Sequence[str]) -> int:
         str(args.config),
         "--output",
         str(args.output / "reliability"),
+        "--exposure-model",
+        args.exposure_model,
     ]
     if args.sensitivity is not None:
         reliability_arguments.extend(("--sensitivity", str(args.sensitivity)))
