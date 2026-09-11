@@ -186,7 +186,7 @@ def test_hello_stretch_config_maps_logged_components():
     assert config.robot_id == "hello_stretch_3"
     assert config.robot_type == "mobile_manipulator"
     assert config.measured_component_count == 7
-    assert config.redundant_components == {}
+    assert config.redundant_components == {"controller": 2}
     assert config.components["telescoping_arm"].features["position"] == (
         "joint_pos_joint_arm_l3",
         "joint_pos_joint_arm_l2",

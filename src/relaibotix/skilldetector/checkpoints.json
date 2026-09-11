@@ -55,7 +55,7 @@
     "mobile-lstm": {
       "case_study": "mobile",
       "modality": "timeseries",
-      "checkpoint": "mobile-timeseries-lstm/best.pt",
+      "checkpoint": "mobile-timeseries-lstm-calibrated/best.pt",
       "feature_schema": "mobile_v1",
       "recommended": true
     },
