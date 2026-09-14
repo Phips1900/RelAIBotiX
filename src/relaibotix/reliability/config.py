@@ -23,6 +23,8 @@ class ExposureAssumptions:
     velocity_multipliers: tuple[float, float, float] = (1.0, 2.0, 5.0)
     effort_multipliers: tuple[float, float, float] = (1.0, 1.25, 1.75)
     distance_multipliers: tuple[float, float, float] = (1.0, 1.5, 2.0)
+    normalized_product_reference_fraction: float = 0.3
+    normalized_product_window_seconds: float = 1.0
     source: str = "framework_example"
 
     def __post_init__(self) -> None:
@@ -30,6 +32,12 @@ class ExposureAssumptions:
             raise ValueError("Exposure assumption source must not be empty.")
         if self.position_step < 0.0 or self.velocity_active < 0.0 or self.effort_active < 0.0:
             raise ValueError("Exposure activity thresholds must be non-negative.")
+        if not 0.0 < self.normalized_product_reference_fraction <= 1.0:
+            raise ValueError(
+                "normalized_product_reference_fraction must lie in (0, 1]."
+            )
+        if self.normalized_product_window_seconds <= 0.0:
+            raise ValueError("normalized_product_window_seconds must be positive.")
         for name, thresholds in (
             ("velocity_bands", self.velocity_bands),
             ("effort_bands", self.effort_bands),
@@ -55,6 +63,10 @@ class ExposureAssumptions:
             "velocity_multipliers": list(self.velocity_multipliers),
             "effort_multipliers": list(self.effort_multipliers),
             "distance_multipliers": list(self.distance_multipliers),
+            "normalized_product_reference_fraction": (
+                self.normalized_product_reference_fraction
+            ),
+            "normalized_product_window_seconds": self.normalized_product_window_seconds,
         }
 
 
@@ -232,6 +244,12 @@ def _exposure_assumptions(raw: object) -> ExposureAssumptions:
         velocity_multipliers=_triple(raw, "velocity_multipliers", (0.0, 0.0, 0.0)),
         effort_multipliers=_triple(raw, "effort_multipliers", (0.0, 0.0, 0.0)),
         distance_multipliers=_triple(raw, "distance_multipliers", (0.0, 0.0, 0.0)),
+        normalized_product_reference_fraction=float(
+            raw.get("normalized_product_reference_fraction", 0.3)
+        ),
+        normalized_product_window_seconds=float(
+            raw.get("normalized_product_window_seconds", 1.0)
+        ),
         source=str(raw["source"]),
     )
 

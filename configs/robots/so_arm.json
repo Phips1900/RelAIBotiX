@@ -6,7 +6,7 @@
     "type": "fixed_manipulator"
   },
   "failure_probability_basis": "per_minute",
-  "failure_probability_source": "legacy_values_with_expert_power_supply_adjustment",
+  "failure_probability_source": "sts3215_actuators_generic_50000h_servo_reference; official_100000_cycle_test_is_qualification_only; fides2009_nprd95_nonactuator_reference_rates; one_required_camera; illustrative_dual_controller",
   "exposure_assumptions": {
     "source": "SO-101 standard STS3215 manufacturer speed and official SO-101 URDF joint ranges",
     "position_step": 0.001,
@@ -16,13 +16,15 @@
     "effort_bands": [0.3, 0.6],
     "velocity_multipliers": [1.0, 1.5, 2.0],
     "effort_multipliers": [1.0, 2.0, 5.0],
-    "distance_multipliers": [1.0, 1.5, 2.0]
+    "distance_multipliers": [1.0, 1.5, 2.0],
+    "normalized_product_reference_fraction": 0.3,
+    "normalized_product_window_seconds": 1.0
   },
   "components": {
     "joint_1": {
       "type": "revolute_joint",
       "features": {"position": "joint_pos_1", "velocity": "joint_vel_1", "effort": null},
-      "failure_probability": 3.577e-7,
+      "failure_probability": 3.33333277777784e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "exposure_references": {"velocity": 5.445427266, "distance": 3.83972},
       "distance_thresholds": [0.1, 0.3],
@@ -31,7 +33,7 @@
     "joint_2": {
       "type": "revolute_joint",
       "features": {"position": "joint_pos_2", "velocity": "joint_vel_2", "effort": null},
-      "failure_probability": 3.577e-7,
+      "failure_probability": 3.33333277777784e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "exposure_references": {"velocity": 5.445427266, "distance": 3.49066},
       "distance_thresholds": [0.1, 0.3],
@@ -40,7 +42,7 @@
     "joint_3": {
       "type": "revolute_joint",
       "features": {"position": "joint_pos_3", "velocity": "joint_vel_3", "effort": null},
-      "failure_probability": 3.577e-7,
+      "failure_probability": 3.33333277777784e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "exposure_references": {"velocity": 5.445427266, "distance": 3.38},
       "distance_thresholds": [0.1, 0.3],
@@ -49,7 +51,7 @@
     "joint_4": {
       "type": "revolute_joint",
       "features": {"position": "joint_pos_4", "velocity": "joint_vel_4", "effort": null},
-      "failure_probability": 3.577e-7,
+      "failure_probability": 3.33333277777784e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "exposure_references": {"velocity": 5.445427266, "distance": 3.31612},
       "distance_thresholds": [0.1, 0.3],
@@ -58,7 +60,7 @@
     "joint_5": {
       "type": "revolute_joint",
       "features": {"position": "joint_pos_5", "velocity": "joint_vel_5", "effort": null},
-      "failure_probability": 3.577e-7,
+      "failure_probability": 3.33333277777784e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "exposure_references": {"velocity": 5.445427266, "distance": 5.58506},
       "distance_thresholds": [0.1, 0.3],
@@ -67,13 +69,13 @@
     "gripper": {
       "type": "gripper",
       "features": {"position": "gripper_state"},
-      "failure_probability": 2.344e-7,
+      "failure_probability": 3.33333277777784e-7,
       "redundancy": {"copies": 1, "mode": "parallel"}
     },
     "controller": {
       "type": "controller",
       "always_active": true,
-      "failure_probability": 2.167e-9,
+      "failure_probability": 2.167e-10,
       "redundancy": {"copies": 2, "mode": "parallel"}
     },
     "power_supply": {
@@ -85,7 +87,7 @@
     "camera": {
       "type": "camera",
       "always_active": true,
-      "failure_probability": 1.029e-8,
+      "failure_probability": 1.029e-9,
       "redundancy": {"copies": 1, "mode": "parallel"}
     }
   }

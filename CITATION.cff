@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use RelAIBotiX, please cite this software and the accompanying paper."
+title: "RelAIBotiX: Skill-Resolved Reliability Analysis for AI-Controlled Robotic Systems"
+type: software
+authors:
+  - family-names: Grimmeisen
+    given-names: Philipp
+repository-code: "https://github.com/Phips1900/RelAIBotiX"
+license: MIT
+version: 0.1.0
+date-released: 2026-09-14
+keywords:
+  - robotics
+  - reliability analysis
+  - fault trees
+  - discrete-time Markov chains
+  - skill detection
+  - PRISM
+  - Storm

@@ -158,6 +158,16 @@ def test_existing_robot_config_defines_measured_components_and_redundancy():
     assert config.redundant_components == {
         "controller": 2,
     }
+    assert config.components["joint_1"].failure_probability == pytest.approx(
+        1.1904761199055258e-7
+    )
+    assert config.components["power_supply"].failure_probability == pytest.approx(
+        6.674e-8
+    )
+    assert {
+        name for name, component in config.components.items()
+        if component.component_type == "camera"
+    } == {"front_camera", "wrist_camera"}
 
     tree = config.build_fault_tree(active_components=["joint_1", "controller"])
     assert tree.gates["loss_of_controller"] == Gate(
@@ -177,7 +187,7 @@ def test_libero_config_matches_position_velocity_only_panda_logs():
     assert config.components["camera"].redundancy_copies == 1
     assert config.components["controller"].redundancy_copies == 2
     assert config.components["power_supply"].redundancy_copies == 1
-    assert config.components["power_supply"].failure_probability == pytest.approx(6.674e-9)
+    assert config.components["power_supply"].failure_probability == pytest.approx(6.674e-8)
 
 
 def test_hello_stretch_config_maps_logged_components():
@@ -187,6 +197,14 @@ def test_hello_stretch_config_maps_logged_components():
     assert config.robot_type == "mobile_manipulator"
     assert config.measured_component_count == 7
     assert config.redundant_components == {"controller": 2}
+    assert config.components["power_supply"].failure_probability == pytest.approx(6.674e-8)
+    assert config.components["left_wheel"].failure_probability == pytest.approx(
+        3.33333277777784e-7
+    )
+    assert {
+        name for name, component in config.components.items()
+        if component.component_type == "camera"
+    } == {"d405_camera", "d435if_camera", "navigation_camera"}
     assert config.components["telescoping_arm"].features["position"] == (
         "joint_pos_joint_arm_l3",
         "joint_pos_joint_arm_l2",
@@ -306,6 +324,7 @@ def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
             "effort_time_low": 2.0,
             "effort_time_medium": 0.0,
             "effort_time_high": 2.0,
+            "combined_weighted_time_bands": 22.0,
             "total_traveled_distance": 4.0,
         }]),
     )
@@ -327,10 +346,12 @@ def test_behavior_exposure_builds_auditable_per_skill_fault_tree(tmp_path):
         },
     })
 
-    result = analyze_reliability(behavior, load_robot_config(config_path))
+    result = analyze_reliability(
+        behavior, load_robot_config(config_path), exposure_model="bands"
+    )
     rows = result.component_failures.set_index("component")
 
-    assert rows.loc["joint_1", "base_exposure"] == pytest.approx(3.0)
+    assert rows.loc["joint_1", "base_exposure"] == pytest.approx(4.0)
     assert rows.loc["joint_1", "average_traveled_distance"] == pytest.approx(2.0)
     assert rows.loc["joint_1", "distance_band"] == "medium"
     assert rows.loc["joint_1", "distance_factor"] == pytest.approx(1.5)
@@ -386,6 +407,7 @@ def test_continuous_exposure_interpolates_without_band_steps(tmp_path):
             "effort_time_medium": 0.0,
             "effort_time_high": 2.0,
             "effort_weighted_time_continuous": 10.0,
+            "combined_weighted_time_continuous": 18.0,
             "total_traveled_distance": 4.0,
         }]),
         metadata={
@@ -416,15 +438,149 @@ def test_continuous_exposure_interpolates_without_band_steps(tmp_path):
     row = result.component_failures.iloc[0]
 
     assert result.exposure_model == "continuous"
-    assert row["velocity_factor"] == pytest.approx(3.5 / 3.0)
-    assert row["effort_factor"] == pytest.approx(2.5)
+    assert row["velocity_factor"] == pytest.approx(4.5 / 4.0)
+    assert row["effort_factor"] == pytest.approx(7.0 / 4.0)
     assert row["distance_factor"] == pytest.approx(1.75)
-    assert row["effective_exposure"] == pytest.approx(15.3125)
+    assert row["effective_exposure"] == pytest.approx(15.75)
     assert len(analyze_component_sensitivity(
         behavior,
         load_robot_config(config_path),
         baseline=result,
     )) == 1
+
+
+def test_normalized_product_uses_precomputed_physical_exposure(tmp_path):
+    behavior = BehavioralResult(
+        segments=pd.DataFrame([
+            {"episode_key": "demo_0", "skill_id": 1, "start_index": 0},
+        ]),
+        joint_metrics=pd.DataFrame(),
+        skill_summary=pd.DataFrame([{
+            "skill_id": 1, "skill": "move", "n_segments": 1,
+            "total_duration": 10.0,
+        }]),
+        joint_summary=pd.DataFrame([{
+            "skill_id": 1, "skill": "move", "joint": "j1",
+            "total_active_time": 8.0,
+            "total_traveled_distance": 2.0,
+            "total_traveled_distance_utilization": 0.5,
+            "normalized_velocity_weighted_time": 12.0,
+            "normalized_effort_weighted_time": 15.0,
+            "normalized_distance_weighted_time": 6.0,
+            "combined_weighted_time_normalized_product": 18.0,
+        }]),
+        metadata={
+            "component_exposure_references": {
+                "joint_1": {"velocity": 2.0, "effort": 10.0, "distance": 4.0}
+            },
+            "normalized_product": {
+                "reference_fraction": 0.3,
+                "window_seconds": 1.0,
+                "available_dimensions": {
+                    "joint_1": ["velocity", "effort", "distance"]
+                },
+            },
+        },
+    )
+    config_path = tmp_path / "robot.json"
+    assumptions = {
+        **EXPOSURE_ASSUMPTIONS,
+        "normalized_product_reference_fraction": 0.3,
+        "normalized_product_window_seconds": 1.0,
+    }
+    _write_robot_config(config_path, {
+        "joint_1": {
+            "type": "revolute_joint",
+            "features": {
+                "position": "joint_pos_1",
+                "velocity": "joint_vel_1",
+                "effort": "joint_torque_1",
+            },
+            "exposure_references": {
+                "velocity": 2.0, "effort": 10.0, "distance": 4.0
+            },
+            "failure_probability": 0.01,
+            "redundancy": {"copies": 1, "mode": "parallel"},
+        },
+    }, assumptions=assumptions)
+
+    result = analyze_reliability(
+        behavior,
+        load_robot_config(config_path),
+        exposure_model="normalized_product",
+    )
+    row = result.component_failures.iloc[0]
+    assert result.exposure_model == "normalized_product"
+    assert row["velocity_factor"] == pytest.approx(1.2)
+    assert row["effort_factor"] == pytest.approx(1.5)
+    assert row["distance_factor"] == pytest.approx(0.6)
+    assert row["effective_exposure"] == pytest.approx(18.0)
+    assert row["normalized_product_dimensions"] == "velocity/effort/distance"
+
+
+def test_additive_normalized_uses_precomputed_physical_exposure(tmp_path):
+    behavior = BehavioralResult(
+        segments=pd.DataFrame([
+            {"episode_key": "demo_0", "skill_id": 1, "start_index": 0},
+        ]),
+        joint_metrics=pd.DataFrame(),
+        skill_summary=pd.DataFrame([{
+            "skill_id": 1, "skill": "move", "n_segments": 1,
+            "total_duration": 10.0,
+        }]),
+        joint_summary=pd.DataFrame([{
+            "skill_id": 1, "skill": "move", "joint": "j1",
+            "total_active_time": 8.0,
+            "total_traveled_distance": 2.0,
+            "total_traveled_distance_utilization": 0.5,
+            "additive_normalized_torque_exposure": 5.0,
+            "additive_normalized_motion_exposure": 3.0,
+            "combined_weighted_time_additive_normalized": 16.0,
+        }]),
+        metadata={
+            "component_exposure_references": {
+                "joint_1": {"velocity": 2.0, "effort": 10.0, "distance": 4.0}
+            },
+            "additive_normalized": {
+                "reference_fraction": 0.3,
+                "available_components": ["joint_1"],
+                "centering": "none",
+            },
+        },
+    )
+    config_path = tmp_path / "robot.json"
+    assumptions = {
+        **EXPOSURE_ASSUMPTIONS,
+        "normalized_product_reference_fraction": 0.3,
+        "normalized_product_window_seconds": 1.0,
+    }
+    _write_robot_config(config_path, {
+        "joint_1": {
+            "type": "revolute_joint",
+            "features": {
+                "position": "joint_pos_1",
+                "velocity": "joint_vel_1",
+                "effort": "joint_torque_1",
+            },
+            "exposure_references": {
+                "velocity": 2.0, "effort": 10.0, "distance": 4.0
+            },
+            "failure_probability": 0.01,
+            "redundancy": {"copies": 1, "mode": "parallel"},
+        },
+    }, assumptions=assumptions)
+
+    result = analyze_reliability(
+        behavior,
+        load_robot_config(config_path),
+    )
+    row = result.component_failures.iloc[0]
+    assert result.exposure_model == "additive_normalized"
+    assert row["base_exposure"] == pytest.approx(8.0)
+    assert row["velocity_factor"] == pytest.approx(11.0 / 8.0)
+    assert row["effort_factor"] == pytest.approx(13.0 / 8.0)
+    assert row["effective_exposure"] == pytest.approx(16.0)
+    assert row["distance_band"] == "additive_normalized"
 
 
 def test_sensitivity_factor_is_validated(tmp_path):

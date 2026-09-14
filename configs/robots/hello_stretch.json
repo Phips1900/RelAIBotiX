@@ -6,9 +6,9 @@
     "type": "mobile_manipulator"
   },
   "failure_probability_basis": "per_minute",
-  "failure_probability_source": "draft_legacy_component_values_with_expert_power_supply_adjustment",
+  "failure_probability_source": "stretch3_actuator_inventory; generic_50000h_stepper_and_servo_references; grouped_servo_assemblies_use_series_rates; fides2009_nprd95_nonactuator_reference_rates; three_nonredundant_required_cameras; illustrative_dual_controller",
   "exposure_assumptions": {
-    "source": "draft_normalized_by_official_stretch_3_sdk_motion_limits_and_mujoco_actuator_references",
+    "source": "normalized_by_official_stretch_3_sdk_motion_limits_and_mujoco_actuator_references",
     "position_step": 0.001,
     "velocity_active": 0.01,
     "effort_active": 0.001,
@@ -16,7 +16,9 @@
     "effort_bands": [0.3, 0.6],
     "velocity_multipliers": [1.0, 1.5, 2.0],
     "effort_multipliers": [1.0, 2.0, 5.0],
-    "distance_multipliers": [1.0, 1.5, 2.0]
+    "distance_multipliers": [1.0, 1.5, 2.0],
+    "normalized_product_reference_fraction": 0.3,
+    "normalized_product_window_seconds": 1.0
   },
   "components": {
     "left_wheel": {
@@ -28,7 +30,7 @@
       },
       "behavior_sources": ["left_wheel"],
       "exposure_references": {"velocity": 6.0, "effort": 120.0, "distance": 6.283185307179586},
-      "failure_probability": 8.33e-8,
+      "failure_probability": 3.33333277777784e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_one_wheel_revolution"
@@ -42,7 +44,7 @@
       },
       "behavior_sources": ["right_wheel"],
       "exposure_references": {"velocity": 6.0, "effort": 120.0, "distance": 6.283185307179586},
-      "failure_probability": 8.33e-8,
+      "failure_probability": 3.33333277777784e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_one_wheel_revolution"
@@ -56,7 +58,7 @@
       },
       "behavior_sources": ["lift"],
       "exposure_references": {"velocity": 0.15, "effort": 70.0, "distance": 1.1},
-      "failure_probability": 8.33e-8,
+      "failure_probability": 3.33333277777784e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_lift_range"
@@ -80,7 +82,7 @@
       },
       "behavior_sources": ["telescoping_arm"],
       "exposure_references": {"velocity": 0.1, "effort": 56.0, "distance": 0.52},
-      "failure_probability": 8.33e-8,
+      "failure_probability": 3.33333277777784e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_total_arm_extension"
@@ -106,7 +108,7 @@
       },
       "behavior_sources": ["wrist"],
       "exposure_references": {"velocity": 6.0, "effort": 125.6, "distance": 14.22},
-      "failure_probability": 8.33e-8,
+      "failure_probability": 9.999995000001667e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_combined_wrist_ranges"
@@ -120,7 +122,7 @@
       },
       "behavior_sources": ["gripper"],
       "exposure_references": {"effort": 240.0, "distance": 0.06},
-      "failure_probability": 1.5e-7,
+      "failure_probability": 3.33333277777784e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_gripper_slide_range"
@@ -143,7 +145,7 @@
       },
       "behavior_sources": ["head"],
       "exposure_references": {"velocity": 7.0, "effort": 57.7, "distance": 8.09},
-      "failure_probability": 8.33e-8,
+      "failure_probability": 6.666664444444938e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_combined_head_ranges"
@@ -157,10 +159,16 @@
     "power_supply": {
       "type": "power_supply",
       "always_active": true,
-      "failure_probability": 6.674e-9,
+      "failure_probability": 6.674e-8,
       "redundancy": {"copies": 1, "mode": "parallel"}
     },
     "d405_camera": {
+      "type": "camera",
+      "always_active": true,
+      "failure_probability": 1.029e-9,
+      "redundancy": {"copies": 1, "mode": "parallel"}
+    },
+    "d435if_camera": {
       "type": "camera",
       "always_active": true,
       "failure_probability": 1.029e-9,

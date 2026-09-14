@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import json
+import math
 from pathlib import Path
 import re
 from typing import Mapping, Sequence
@@ -167,6 +168,247 @@ def _continuous_weighted_time(
     return float(np.sum(dt[active_mask] * factors))
 
 
+def _interval_factors(
+    values: np.ndarray | None,
+    dt: np.ndarray,
+    active: float,
+    bands: tuple[float, float],
+    multipliers: tuple[float, float, float],
+    *,
+    continuous: bool,
+) -> np.ndarray:
+    """Return neutral factors except where a finite signal is active."""
+
+    factors = np.ones(dt.size, dtype=float)
+    if values is None or values.size <= 1:
+        return factors
+    magnitude = np.abs(values[:-1])
+    signal_active = (
+        np.isfinite(magnitude)
+        & np.isfinite(dt)
+        & (dt >= 0.0)
+        & (magnitude > active)
+    )
+    if continuous:
+        factors[signal_active] = np.interp(
+            magnitude[signal_active],
+            (0.0, bands[0], bands[1]),
+            multipliers,
+        )
+    else:
+        factors[signal_active & (magnitude <= bands[0])] = multipliers[0]
+        factors[
+            signal_active & (magnitude > bands[0]) & (magnitude <= bands[1])
+        ] = multipliers[1]
+        factors[signal_active & (magnitude > bands[1])] = multipliers[2]
+    return factors
+
+
+def _normalized_product_exposures(
+    features: np.ndarray,
+    timestamps: np.ndarray,
+    episodes: np.ndarray,
+    joints: Mapping[str, Mapping[str, tuple[int, ...]]],
+    references: Mapping[str, Mapping[str, float]],
+    *,
+    reference_fraction: float,
+    window_seconds: float,
+    thresholds: BehavioralThresholds,
+) -> tuple[
+    dict[str, dict[str, np.ndarray]],
+    dict[str, list[str]],
+    list[str],
+    dict[str, list[str]],
+]:
+    """Calculate reference-normalized products in fixed physical-time windows.
+
+    Windows are aligned to episode time, not detector boundaries. Their exposure
+    is subsequently attributed to the skill owning each physical interval.
+    Missing telemetry dimensions are neutral rather than silently treated as zero.
+    """
+
+    interval_count = max(0, len(features) - 1)
+    output: dict[str, dict[str, np.ndarray]] = {}
+    available: dict[str, list[str]] = {}
+    torque_distance_available: list[str] = []
+    additive_available: dict[str, list[str]] = {}
+    episode_changes = np.flatnonzero(episodes[1:] != episodes[:-1]) + 1
+    episode_starts = np.r_[0, episode_changes]
+    episode_ends = np.r_[episode_changes, len(features)]
+
+    def signal(values: np.ndarray, columns: tuple[int, ...]) -> np.ndarray:
+        selected = values[:, columns]
+        if selected.ndim == 1:
+            return np.abs(selected)
+        if selected.shape[1] == 1:
+            return np.abs(selected[:, 0])
+        return np.max(np.abs(selected), axis=1)
+
+    for joint, columns in joints.items():
+        joint_references = references.get(joint, {})
+        dimensions = [
+            name
+            for name, column_name in (
+                ("velocity", "vel"),
+                ("effort", "effort"),
+                ("distance", "pos"),
+            )
+            if column_name in columns and name in joint_references
+        ]
+        if not dimensions:
+            continue
+        available[joint] = dimensions
+        metric_arrays = {
+            "velocity": np.zeros(interval_count, dtype=float),
+            "effort": np.zeros(interval_count, dtype=float),
+            "distance": np.zeros(interval_count, dtype=float),
+            "product": np.zeros(interval_count, dtype=float),
+            "torque_distance": np.zeros(interval_count, dtype=float),
+            "additive_torque": np.zeros(interval_count, dtype=float),
+            "additive_motion": np.zeros(interval_count, dtype=float),
+            "additive_normalized": np.zeros(interval_count, dtype=float),
+        }
+
+        has_torque_distance = (
+            "pos" in columns
+            and "effort" in columns
+            and "velocity" in joint_references
+            and "effort" in joint_references
+        )
+        if has_torque_distance:
+            torque_distance_available.append(joint)
+        additive_dimensions: list[str] = []
+        if "effort" in columns and "effort" in joint_references:
+            additive_dimensions.append("effort")
+        if "pos" in columns and "velocity" in joint_references:
+            additive_dimensions.append("motion")
+        if additive_dimensions:
+            additive_available[joint] = additive_dimensions
+
+        for episode_start, episode_end in zip(
+            episode_starts, episode_ends, strict=True
+        ):
+            if episode_end - episode_start <= 1:
+                continue
+            values = features[episode_start:episode_end]
+            times = timestamps[episode_start:episode_end]
+            dt = np.diff(times)
+            finite_interval = np.isfinite(dt) & (dt >= 0.0)
+            if not np.any(finite_interval):
+                continue
+            window_ids = np.floor(
+                np.maximum(0.0, times[:-1] - times[0]) / window_seconds
+            ).astype(np.int64)
+            velocity = signal(values[:-1], columns["vel"]) if "vel" in columns else None
+            effort = (
+                signal(values[:-1], columns["effort"])
+                if "effort" in columns
+                else None
+            )
+            position = values[:, columns["pos"]] if "pos" in columns else None
+            if position is not None and position.ndim == 1:
+                position = position[:, np.newaxis]
+
+            steps = (
+                np.sum(np.abs(np.diff(position, axis=0)), axis=1)
+                if position is not None
+                else None
+            )
+            if has_torque_distance and steps is not None and effort is not None:
+                valid = (
+                    finite_interval
+                    & np.isfinite(steps)
+                    & np.isfinite(effort)
+                )
+                torque_utilization = np.abs(effort[valid]) / (
+                    joint_references["effort"] * reference_fraction
+                )
+                equivalent_time = (
+                    torque_utilization**3
+                    * steps[valid]
+                    / (joint_references["velocity"] * reference_fraction)
+                )
+                global_indices = episode_start + np.flatnonzero(valid)
+                metric_arrays["torque_distance"][global_indices] = equivalent_time
+
+            if additive_dimensions:
+                valid = finite_interval.copy()
+                if "motion" in additive_dimensions and steps is not None:
+                    valid &= np.isfinite(steps)
+                if "effort" in additive_dimensions and effort is not None:
+                    valid &= np.isfinite(effort)
+                position_active = (
+                    steps > thresholds.position_step
+                    if steps is not None
+                    else np.zeros_like(valid)
+                )
+                velocity_active = (
+                    np.isfinite(velocity)
+                    & (velocity / joint_references["velocity"] > thresholds.velocity_active)
+                    if velocity is not None and "velocity" in joint_references
+                    else np.zeros_like(position_active)
+                )
+                effort_active = (
+                    np.isfinite(effort)
+                    & (effort / joint_references["effort"] > thresholds.effort_active)
+                    if effort is not None and "effort" in joint_references
+                    else np.zeros_like(position_active)
+                )
+                active = valid & (position_active | velocity_active | effort_active)
+                additive_torque = np.zeros(np.count_nonzero(active), dtype=float)
+                if "effort" in additive_dimensions and effort is not None:
+                    additive_torque = (
+                        effort[active]
+                        / (joint_references["effort"] * reference_fraction)
+                        * dt[active]
+                    )
+                additive_motion = np.zeros(np.count_nonzero(active), dtype=float)
+                if "motion" in additive_dimensions and steps is not None:
+                    additive_motion = (
+                        steps[active]
+                        / (joint_references["velocity"] * reference_fraction)
+                    )
+                active_indices = episode_start + np.flatnonzero(active)
+                metric_arrays["additive_torque"][active_indices] = additive_torque
+                metric_arrays["additive_motion"][active_indices] = additive_motion
+                metric_arrays["additive_normalized"][active_indices] = (
+                    dt[active] + additive_torque + additive_motion
+                )
+
+            for window_id in np.unique(window_ids[finite_interval]):
+                local = (window_ids == window_id) & finite_interval
+                duration = float(np.sum(dt[local]))
+                if duration <= 0.0:
+                    continue
+                factors = {"velocity": 1.0, "effort": 1.0, "distance": 1.0}
+                if "velocity" in dimensions and velocity is not None:
+                    rms = math.sqrt(float(np.sum(velocity[local] ** 2 * dt[local])) / duration)
+                    factors["velocity"] = rms / (
+                        joint_references["velocity"] * reference_fraction
+                    )
+                if "effort" in dimensions and effort is not None:
+                    rms = math.sqrt(float(np.sum(effort[local] ** 2 * dt[local])) / duration)
+                    factors["effort"] = rms / (
+                        joint_references["effort"] * reference_fraction
+                    )
+                if "distance" in dimensions and position is not None:
+                    steps = np.abs(np.diff(position, axis=0))
+                    finite_steps = np.all(np.isfinite(steps), axis=1) & local
+                    distance = float(np.sum(steps[finite_steps]))
+                    factors["distance"] = distance / (
+                        joint_references["distance"] * reference_fraction
+                    )
+
+                product = math.prod(factors[name] for name in dimensions)
+                global_indices = episode_start + np.flatnonzero(local)
+                for name in ("velocity", "effort", "distance"):
+                    metric_arrays[name][global_indices] = dt[local] * factors[name]
+                metric_arrays["product"][global_indices] = dt[local] * product
+
+        output[joint] = metric_arrays
+    return output, available, torque_distance_available, additive_available
+
+
 class BehavioralAnalyzer:
     """Calculate time, position, velocity, and effort metrics from labeled trajectories."""
 
@@ -179,6 +421,8 @@ class BehavioralAnalyzer:
         component_references: Mapping[str, Mapping[str, float]] | None = None,
         velocity_multipliers: tuple[float, float, float] = (1.0, 1.5, 2.0),
         effort_multipliers: tuple[float, float, float] = (1.0, 2.0, 5.0),
+        normalized_product_reference_fraction: float = 0.3,
+        normalized_product_window_seconds: float = 1.0,
     ) -> None:
         self.thresholds = thresholds or BehavioralThresholds()
         self.skill_names = dict(skill_names or {})
@@ -189,6 +433,10 @@ class BehavioralAnalyzer:
         }
         self.velocity_multipliers = velocity_multipliers
         self.effort_multipliers = effort_multipliers
+        self.normalized_product_reference_fraction = (
+            normalized_product_reference_fraction
+        )
+        self.normalized_product_window_seconds = normalized_product_window_seconds
 
     def analyze(
         self,
@@ -224,6 +472,21 @@ class BehavioralAnalyzer:
         if not joints:
             raise ValueError("No joint position, velocity, or effort features were found.")
         base_columns = _mobile_base_features(feature_names)
+        (
+            normalized_exposures,
+            normalized_dimensions,
+            torque_distance_components,
+            additive_dimensions,
+        ) = _normalized_product_exposures(
+            values,
+            times,
+            episodes,
+            joints,
+            self.component_references,
+            reference_fraction=self.normalized_product_reference_fraction,
+            window_seconds=self.normalized_product_window_seconds,
+            thresholds=self.thresholds,
+        )
 
         segment_rows: list[dict[str, object]] = []
         joint_rows: list[dict[str, object]] = []
@@ -270,6 +533,10 @@ class BehavioralAnalyzer:
                         joint,
                         segment,
                         self.component_references.get(joint, {}),
+                        {
+                            name: exposure[start:interval_end]
+                            for name, exposure in normalized_exposures.get(joint, {}).items()
+                        },
                     )
                 )
             if base_columns:
@@ -299,6 +566,32 @@ class BehavioralAnalyzer:
                 "continuous_exposure_multipliers": {
                     "velocity": list(self.velocity_multipliers),
                     "effort": list(self.effort_multipliers),
+                },
+                "joint_exposure_integration": "interval_aligned_product_v1",
+                "normalized_product": {
+                    "formula": "u_velocity * u_effort * u_distance",
+                    "reference_fraction": self.normalized_product_reference_fraction,
+                    "window_seconds": self.normalized_product_window_seconds,
+                    "window_alignment": "episode_time",
+                    "skill_attribution": "left_endpoint_after_physical_window_calculation",
+                    "available_dimensions": normalized_dimensions,
+                    "missing_dimensions": "neutral_factor_one",
+                },
+                "torque_distance": {
+                    "formula": "(abs(effort) / effort_reference)^3 * abs(delta_position) / velocity_reference",
+                    "reference_fraction": self.normalized_product_reference_fraction,
+                    "skill_attribution": "left_endpoint",
+                    "available_components": torque_distance_components,
+                    "missing_components": "measured_active_time_fallback",
+                },
+                "additive_normalized": {
+                    "formula": "active_time + normalized_effort_time + normalized_motion_time",
+                    "reference_fraction": self.normalized_product_reference_fraction,
+                    "skill_attribution": "left_endpoint",
+                    "available_dimensions": additive_dimensions,
+                    "missing_dimensions": "omit_unavailable_term",
+                    "missing_components": "measured_active_time_fallback",
+                    "centering": "none",
                 },
             },
         )
@@ -714,6 +1007,7 @@ class BehavioralAnalyzer:
         joint: str,
         segment: Mapping[str, object],
         references: Mapping[str, float],
+        normalized_exposure: Mapping[str, np.ndarray],
     ) -> dict[str, object]:
         def signal_values(signal: str) -> tuple[np.ndarray | None, int]:
             if signal not in columns:
@@ -806,7 +1100,73 @@ class BehavioralAnalyzer:
         )
         active_mask = position_active | velocity_active | effort_active
         active_time = float(np.sum(dt[active_mask])) if dt.size else 0.0
+        velocity_factors_bands = _interval_factors(
+            velocity_for_exposure,
+            dt,
+            self.thresholds.velocity_active,
+            self.thresholds.velocity_bands,
+            self.velocity_multipliers,
+            continuous=False,
+        )
+        effort_factors_bands = _interval_factors(
+            effort_for_exposure,
+            dt,
+            self.thresholds.effort_active,
+            self.thresholds.effort_bands,
+            self.effort_multipliers,
+            continuous=False,
+        )
+        velocity_factors_continuous = _interval_factors(
+            velocity_for_exposure,
+            dt,
+            self.thresholds.velocity_active,
+            self.thresholds.velocity_bands,
+            self.velocity_multipliers,
+            continuous=True,
+        )
+        effort_factors_continuous = _interval_factors(
+            effort_for_exposure,
+            dt,
+            self.thresholds.effort_active,
+            self.thresholds.effort_bands,
+            self.effort_multipliers,
+            continuous=True,
+        )
+        combined_weighted_time_bands = float(np.sum(
+            dt[active_mask]
+            * velocity_factors_bands[active_mask]
+            * effort_factors_bands[active_mask]
+        ))
+        combined_weighted_time_continuous = float(np.sum(
+            dt[active_mask]
+            * velocity_factors_continuous[active_mask]
+            * effort_factors_continuous[active_mask]
+        ))
         duration = float(segment["duration"])
+        normalized_velocity_exposure = float(
+            np.sum(normalized_exposure.get("velocity", np.array([], dtype=float)))
+        ) if normalized_exposure else float("nan")
+        normalized_effort_exposure = float(
+            np.sum(normalized_exposure.get("effort", np.array([], dtype=float)))
+        ) if normalized_exposure else float("nan")
+        normalized_distance_exposure = float(
+            np.sum(normalized_exposure.get("distance", np.array([], dtype=float)))
+        ) if normalized_exposure else float("nan")
+        normalized_product_exposure = float(
+            np.sum(normalized_exposure.get("product", np.array([], dtype=float)))
+        ) if normalized_exposure else float("nan")
+        torque_distance_exposure = float(
+            np.sum(normalized_exposure.get("torque_distance", np.array([], dtype=float)))
+        ) if normalized_exposure else float("nan")
+        additive_torque_exposure = float(
+            np.sum(normalized_exposure.get("additive_torque", np.array([], dtype=float)))
+        ) if normalized_exposure else float("nan")
+        additive_motion_exposure = float(
+            np.sum(normalized_exposure.get("additive_motion", np.array([], dtype=float)))
+        ) if normalized_exposure else float("nan")
+        additive_normalized_exposure = float(
+            np.sum(normalized_exposure.get("additive_normalized", np.array([], dtype=float)))
+        ) if normalized_exposure else float("nan")
 
         return {
             "episode_id": segment["episode_id"],
@@ -845,6 +1205,16 @@ class BehavioralAnalyzer:
             "effort_time_medium": effort_medium,
             "effort_time_high": effort_high,
             "effort_weighted_time_continuous": effort_weighted_time_continuous,
+            "combined_weighted_time_bands": combined_weighted_time_bands,
+            "combined_weighted_time_continuous": combined_weighted_time_continuous,
+            "normalized_velocity_weighted_time": normalized_velocity_exposure,
+            "normalized_effort_weighted_time": normalized_effort_exposure,
+            "normalized_distance_weighted_time": normalized_distance_exposure,
+            "combined_weighted_time_normalized_product": normalized_product_exposure,
+            "combined_weighted_time_torque_distance": torque_distance_exposure,
+            "additive_normalized_torque_exposure": additive_torque_exposure,
+            "additive_normalized_motion_exposure": additive_motion_exposure,
+            "combined_weighted_time_additive_normalized": additive_normalized_exposure,
             "active_time": active_time,
             "active_fraction": active_time / duration if duration > 0.0 else 0.0,
         }
@@ -891,6 +1261,16 @@ class BehavioralAnalyzer:
                 effort_time_medium=("effort_time_medium", "sum"),
                 effort_time_high=("effort_time_high", "sum"),
                 effort_weighted_time_continuous=("effort_weighted_time_continuous", "sum"),
+                combined_weighted_time_bands=("combined_weighted_time_bands", "sum"),
+                combined_weighted_time_continuous=("combined_weighted_time_continuous", "sum"),
+                normalized_velocity_weighted_time=("normalized_velocity_weighted_time", lambda value: value.sum(min_count=1)),
+                normalized_effort_weighted_time=("normalized_effort_weighted_time", lambda value: value.sum(min_count=1)),
+                normalized_distance_weighted_time=("normalized_distance_weighted_time", lambda value: value.sum(min_count=1)),
+                combined_weighted_time_normalized_product=("combined_weighted_time_normalized_product", lambda value: value.sum(min_count=1)),
+                combined_weighted_time_torque_distance=("combined_weighted_time_torque_distance", lambda value: value.sum(min_count=1)),
+                additive_normalized_torque_exposure=("additive_normalized_torque_exposure", lambda value: value.sum(min_count=1)),
+                additive_normalized_motion_exposure=("additive_normalized_motion_exposure", lambda value: value.sum(min_count=1)),
+                combined_weighted_time_additive_normalized=("combined_weighted_time_additive_normalized", lambda value: value.sum(min_count=1)),
             )
         )
 

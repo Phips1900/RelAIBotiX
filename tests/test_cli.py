@@ -335,6 +335,8 @@ def test_reliability_command(tmp_path):
         "--output",
         str(output_path),
         "--sensitivity",
+        "--exposure-model",
+        "bands",
     ]) == 0
     assert (output_path / "component_failures.csv").is_file()
     assert (output_path / "skill_probabilities.csv").is_file()
@@ -346,6 +348,9 @@ def test_reliability_command(tmp_path):
     assert (output_path / "sensitivity.csv").is_file()
     assert (output_path / "sensitivity.json").is_file()
     assert (output_path / "sensitivity_spider.svg").is_file()
+    spider = (output_path / "sensitivity_spider.svg").read_text()
+    assert "1.0× baseline" in spider
+    assert "Unchanged model (1.0×)" in spider
     reliability = json.loads((output_path / "reliability.json").read_text())
     assert reliability["repeated_run_mttf"]["hours"] > 0.0
 
@@ -420,12 +425,47 @@ def test_experiments_command_writes_publication_outputs(tmp_path):
     provenance = json.loads((output_path / "provenance.json").read_text())
     assert provenance["solvers"]["internal"]["enabled"] is True
     assert provenance["experiments"][0]["input_sha256"]
+    assert provenance["experiments"][0]["input_checksum_verified"] is True
     assert provenance["experiments"][0]["episode_selection"] == "all"
     assert provenance["experiments"][0]["terminal_skill"] == "Place"
     assert provenance["experiments"][0]["exclude_missing_terminal"] is True
     assert provenance["experiments"][0]["exposure_model"] == "continuous"
     assert provenance["method"]["exposure_models"] == ["continuous"]
     assert len(provenance["experiments"]) == 1
+
+
+def test_experiment_manifest_data_root_and_checksum(tmp_path):
+    from relaibotix.experiments import load_experiment_manifest, sha256_file
+
+    data_root = tmp_path / "portable-data"
+    data_root.mkdir()
+    input_path = data_root / "input.h5"
+    input_path.write_bytes(b"portable input")
+    config_path = tmp_path / "robot.json"
+    config_path.write_text("{}")
+    manifest_path = tmp_path / "experiments.json"
+    manifest_path.write_text(json.dumps({
+        "schema_version": "1.0",
+        "name": "Portable experiment",
+        "data_root": "missing-default",
+        "experiments": [{
+            "id": "portable",
+            "setting": "CS-test",
+            "platform": "Test Robot",
+            "task": "test task",
+            "policy": "test policy",
+            "input_h5": "input.h5",
+            "input_sha256": sha256_file(input_path),
+            "robot_config": "robot.json",
+            "scope": "included",
+            "skill_names": {"0": "Operation"},
+            "label_source": "existing_detector_predictions",
+        }],
+    }))
+
+    manifest = load_experiment_manifest(manifest_path, data_root=data_root)
+    assert manifest.experiments[0].input_h5 == input_path.resolve()
+    assert manifest.experiments[0].expected_input_sha256 == sha256_file(input_path)
 
 
 def test_gui_command_dispatches_without_importing_qt(monkeypatch):

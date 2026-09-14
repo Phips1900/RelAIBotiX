@@ -12,7 +12,9 @@
     "effort_bands": [0.2, 0.6],
     "velocity_multipliers": [1.0, 1.5, 2.0],
     "effort_multipliers": [1.0, 1.5, 2.0],
-    "distance_multipliers": [1.0, 1.5, 2.0]
+    "distance_multipliers": [1.0, 1.5, 2.0],
+    "normalized_product_reference_fraction": 0.3,
+    "normalized_product_window_seconds": 1.0
   },
   "components": {
     "joint_1": {"type": "revolute_joint", "features": {"position": "joint_pos_1", "velocity": "joint_vel_1", "effort": null}, "failure_probability": 8.33e-8, "redundancy": {"copies": 1, "mode": "parallel"}},

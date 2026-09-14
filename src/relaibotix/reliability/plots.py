@@ -46,7 +46,8 @@ def write_sensitivity_spider_svg(
         '<rect width="100%" height="100%" fill="white"/>',
         '<style>text{font-family:Arial,sans-serif;fill:#263238}'
         '.label{font-size:14px}.tick{font-size:12px;fill:#667085}'
-        '.title{font-size:20px;font-weight:600}</style>',
+        '.title{font-size:20px;font-weight:600}'
+        '.legend{font-size:13px;fill:#475467}</style>',
     ]
     factor = float(values["requested_factor"].iloc[0])
     lines.append(
@@ -64,6 +65,15 @@ def write_sensitivity_spider_svg(
             f'<text class="tick" x="{center_x + 5:g}" '
             f'y="{center_y - radius * fraction + 14:g}">{maximum * fraction:.3g}×</text>'
         )
+    baseline = " ".join(
+        f"{x:.2f},{y:.2f}" for x, y in (point(angle, 1.0) for angle in angles)
+    )
+    lines.extend((
+        f'<polygon points="{baseline}" fill="none" stroke="#667085" '
+        'stroke-width="2" stroke-dasharray="7 5"/>',
+        f'<text class="tick" x="{center_x + 5:g}" '
+        f'y="{center_y - radius / maximum + 14:g}">1.0× baseline</text>',
+    ))
     for angle, label in zip(angles, labels):
         axis_x, axis_y = point(angle, maximum)
         label_x = center_x + (radius + 34.0) * math.cos(angle)
@@ -87,6 +97,12 @@ def write_sensitivity_spider_svg(
     lines.extend((
         f'<polygon points="{polygon}" fill="#2563eb" fill-opacity="0.2" '
         'stroke="#2563eb" stroke-width="3"/>',
+        '<line x1="245" y1="727" x2="280" y2="727" stroke="#667085" '
+        'stroke-width="2" stroke-dasharray="7 5"/>',
+        '<text class="legend" x="288" y="731">Unchanged model (1.0×)</text>',
+        '<line x1="500" y1="727" x2="535" y2="727" stroke="#2563eb" '
+        'stroke-width="3"/>',
+        f'<text class="legend" x="543" y="731">Component rate ×{factor:g}</text>',
         '</svg>',
     ))
     destination = Path(output_path)

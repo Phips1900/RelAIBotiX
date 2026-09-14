@@ -383,9 +383,12 @@ def _reliability_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--exposure-model",
-        choices=("bands", "continuous"),
-        default="bands",
-        help="Map observed motion to exposure with discrete bands or continuous interpolation.",
+        choices=("bands", "continuous", "normalized_product", "torque_distance", "additive_normalized"),
+        default="additive_normalized",
+        help=(
+            "Map observed motion with discrete bands, continuous interpolation, or "
+            "a normalized product, torque-distance wear, or additive normalized exposure."
+        ),
     )
     parser.add_argument("--prism", action="store_true", help="Verify models with PRISM")
     parser.add_argument("--prism-executable", default="prism")
@@ -525,6 +528,14 @@ def _experiments_parser() -> argparse.ArgumentParser:
     run_parser = commands.add_parser("run", help="Run every experiment in a manifest.")
     run_parser.add_argument("manifest", type=Path)
     run_parser.add_argument("--output", type=Path, required=True)
+    run_parser.add_argument(
+        "--data-root",
+        type=Path,
+        help=(
+            "Override the manifest data root. The RELAIBOTIX_DATA_ROOT environment "
+            "variable provides the same portable override."
+        ),
+    )
     run_parser.add_argument("--prism", action="store_true")
     run_parser.add_argument("--prism-executable", default="prism")
     run_parser.add_argument("--storm", action="store_true")
@@ -532,7 +543,7 @@ def _experiments_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--approximate-solvers", action="store_true")
     run_parser.add_argument(
         "--exposure-model",
-        choices=("bands", "continuous"),
+        choices=("bands", "continuous", "normalized_product", "torque_distance", "additive_normalized"),
         help="Override the exposure model declared by every manifest experiment.",
     )
     run_parser.add_argument(
@@ -547,12 +558,13 @@ def _run_experiments(arguments: Sequence[str]) -> int:
     from .experiments import (
         configured_analyzer,
         load_experiment_manifest,
+        sha256_file,
         write_experiment_summary,
     )
     from .reliability import load_robot_config
 
     args = _experiments_parser().parse_args(arguments)
-    manifest = load_experiment_manifest(args.manifest)
+    manifest = load_experiment_manifest(args.manifest, data_root=args.data_root)
     if args.exposure_model is not None:
         manifest = replace(
             manifest,
@@ -582,6 +594,13 @@ def _run_experiments(arguments: Sequence[str]) -> int:
             f"[{index}/{len(manifest.experiments)}] "
             f"{experiment.setting} / {experiment.task} / {experiment.policy}"
         )
+        if experiment.expected_input_sha256 is not None:
+            actual_hash = sha256_file(experiment.input_h5)
+            if actual_hash != experiment.expected_input_sha256:
+                raise ValueError(
+                    f"Input checksum mismatch for {experiment.experiment_id}: "
+                    f"expected {experiment.expected_input_sha256}, got {actual_hash}."
+                )
         if not _print_validation(experiment.input_h5, experiment.robot_config):
             raise ValueError(f"Invalid experiment input: {experiment.experiment_id}")
         config = load_robot_config(experiment.robot_config)
@@ -674,8 +693,8 @@ def _pipeline_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--exposure-model",
-        choices=("bands", "continuous"),
-        default="bands",
+        choices=("bands", "continuous", "normalized_product", "torque_distance", "additive_normalized"),
+        default="additive_normalized",
     )
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--checkpoint", type=Path)

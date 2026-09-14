@@ -52,6 +52,16 @@ class BatchPage(QWidget):
         manifest_row.addWidget(manifest_button)
         form.addRow("Manifest", manifest_row)
 
+        self.data_root = QLineEdit()
+        self.data_root.setPlaceholderText("Use manifest default or RELAIBOTIX_DATA_ROOT")
+        data_row = QHBoxLayout()
+        data_row.addWidget(self.data_root)
+        data_button = QPushButton("Browse…")
+        data_button.setMaximumWidth(100)
+        data_button.clicked.connect(self._browse_data_root)
+        data_row.addWidget(data_button)
+        form.addRow("Dataset root", data_row)
+
         self.output_path = QLineEdit(str(root_path / "artifacts" / "paper_validation_gui"))
         output_row = QHBoxLayout()
         output_row.addWidget(self.output_path)
@@ -61,7 +71,7 @@ class BatchPage(QWidget):
         output_row.addWidget(output_button)
         form.addRow("Output folder", output_row)
 
-        self.include_optional = QCheckBox("Include optional experiments such as SO-ARM MuJoCo")
+        self.include_optional = QCheckBox("Include manifest entries marked optional")
         self.include_optional.setChecked(True)
         form.addRow("Scope", self.include_optional)
 
@@ -132,6 +142,8 @@ class BatchPage(QWidget):
         arguments = [
             "experiments", "run", str(manifest), "--output", self.output_path.text()
         ]
+        if self.data_root.text().strip():
+            arguments.extend(("--data-root", self.data_root.text().strip()))
         if not self.include_optional.isChecked():
             arguments.append("--exclude-optional")
         if self.prism.isChecked():
@@ -142,6 +154,15 @@ class BatchPage(QWidget):
         self.log.clear()
         self.results.setCurrentWidget(self.log)
         self.run_requested.emit(arguments)
+
+    def _browse_data_root(self) -> None:
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Select publication dataset root",
+            self.data_root.text() or str(Path.home()),
+        )
+        if selected:
+            self.data_root.setText(selected)
 
     def set_running(self, running: bool) -> None:
         self.run_button.setEnabled(not running)

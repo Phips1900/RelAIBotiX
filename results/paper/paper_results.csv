@@ -1,0 +1,32 @@
+setting,platform,task,policy,scope,runs,average_time_per_run_s,system_failure_probability_per_run,mttf_h,critical_components
+CS1,SO-ARM 101 (real),cube stacking,ACT,included,10,23.093638041200006,5.611680967766552e-07,11431.327094196931,joint_2 & joint_1
+CS1,SO-ARM 101 (real),cube stacking,SmolVLA,included,10,25.458968641799995,5.800907379624388e-07,12191.07870515849,joint_2 & joint_4
+CS2,Franka (LIBERO),LIBERO-Object,ACT,included,100,11.648999999999983,1.4270418578805647e-07,22675.108156916715,joint_7 & joint_6
+CS2,Franka (LIBERO),LIBERO-Object,SmolVLA,included,100,7.593500000000006,1.249859224585383e-07,16876.344234711516,joint_2 & joint_4
+CS2,Franka (LIBERO),LIBERO-Object,pi0.5,included,100,6.669000000000006,1.1304011334848778e-07,16387.987139275952,joint_2 & joint_4
+CS2,Franka (LIBERO),LIBERO-Object,pi0-FAST,included,100,9.871999999999998,1.5693226110729857e-07,17473.921586091943,joint_2 & joint_6
+CS2,Franka (LIBERO),LIBERO-Spatial,pi0.5,included,100,5.087500000000005,9.410647678220563e-08,15016.972755837058,joint_4 & joint_2
+CS2,Franka (LIBERO),LIBERO-Spatial,pi0-FAST,included,100,8.022,1.339351687811123e-07,16637.401691489973,joint_4 & joint_2
+CS2,Franka (LIBERO),LIBERO-Goal,pi0.5,included,100,5.807000000000001,9.7309928634764e-08,16576.473922078247,joint_4 & joint_2
+CS2,Franka (LIBERO),LIBERO-Goal,pi0-FAST,included,100,8.232000000000003,1.2655332692349903e-07,18068.79808585446,joint_4 & joint_2
+CS3,Franka (simulation),bottle 0.2 kg,ACT,included,92,18.54782608695652,4.889841416612949e-07,10536.48283477065,joint_6 & joint_7
+CS3,Franka (simulation),bottle 0.2 kg,pi0.5,included,68,22.46470588235296,6.107110695236237e-07,10217.916561216103,joint_6 & joint_7
+CS3,Franka (simulation),bottle 0.2 kg,SmolVLA,included,73,24.497945205479468,7.426995973256147e-07,9162.497254225582,joint_6 & joint_7
+CS3,Franka (simulation),bottle 5 kg,ACT,included,63,18.634920634920643,5.245921177959429e-07,9867.410836122557,joint_6 & joint_2
+CS3,Franka (simulation),bottle 5 kg,pi0.5,included,36,22.519444444444442,6.518586800760917e-07,9596.251612279895,joint_6 & joint_2
+CS3,Franka (simulation),bottle 5 kg,SmolVLA,included,53,26.590566037735865,8.277940353814397e-07,8922.83109076129,joint_6 & joint_7
+CS3,Franka (simulation),color sorting,ACT,included,100,14.769499999999987,3.8923567256347e-07,10540.242341511375,joint_6 & joint_2
+CS3,Franka (simulation),color sorting,pi0.5,included,100,18.4825,5.257516192195738e-07,9765.11823734217,joint_6 & joint_2
+CS3,Franka (simulation),color sorting,SmolVLA,included,97,16.995876288659783,5.491108376794031e-07,8597.6737839682,joint_6 & joint_2
+CS4,Franka (real),empty bottle,ACT,included,106,28.51019071148113,5.892404572694671e-07,13440.176441272897,joint_2 & joint_4
+CS4,Franka (real),empty bottle,pi0.5,included,102,26.178289820529418,5.379155094086451e-07,13518.379000545721,joint_2 & joint_4
+CS4,Franka (real),empty bottle,SmolVLA,included,101,26.502730191980202,5.453529862003283e-07,13499.271507487201,joint_2 & joint_4
+CS4,Franka (real),full bottle,ACT,included,111,27.135080827126128,5.712960047845035e-07,13193.722389882716,joint_2 & joint_4
+CS4,Franka (real),full bottle,pi0.5,included,107,25.21738908917755,5.231905403019251e-07,13388.67665942161,joint_2 & joint_4
+CS4,Franka (real),full bottle,SmolVLA,included,106,29.35330947461319,6.037728564946313e-07,13504.574127404047,joint_2 & joint_4
+CS4,Franka (real),color sorting,ACT,included,99,31.125960681898995,6.665722152439495e-07,12970.98334103808,joint_2 & joint_4
+CS4,Franka (real),color sorting,pi0.5,included,92,26.084598343499987,5.530644609445975e-07,13101.040129186478,joint_2 & joint_4
+CS4,Franka (real),color sorting,SmolVLA,included,96,28.468293458218778,6.014691744099747e-07,13147.56784723268,joint_2 & joint_4
+CS5,Hello Robot Stretch 3 (simulation),mobile pick and place,ACT,included,100,16.238499999999995,1.1566943211436423e-06,3899.6412379976496,wrist & lift
+CS5,Hello Robot Stretch 3 (simulation),mobile pick and place,pi0.5,included,100,21.925999999999995,1.5610752960832677e-06,3901.5106001496965,wrist & lift
+CS5,Hello Robot Stretch 3 (simulation),mobile pick and place,SmolVLA,included,100,21.47100000000002,1.6012007633364024e-06,3724.8068606783854,wrist & lift

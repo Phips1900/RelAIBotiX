@@ -256,8 +256,17 @@ class MainWindow(QMainWindow):
         group = QGroupBox("3. Reliability analysis")
         form = QFormLayout(group)
         self.exposure_model = QComboBox()
+        self.exposure_model.addItem(
+            "Operating time + torque + motion", "additive_normalized"
+        )
         self.exposure_model.addItem("Low / medium / high bands", "bands")
         self.exposure_model.addItem("Continuous interpolation", "continuous")
+        self.exposure_model.addItem(
+            "Normalized velocity × effort × distance", "normalized_product"
+        )
+        self.exposure_model.addItem(
+            "Torque-weighted traveled distance", "torque_distance"
+        )
         form.addRow("Exposure calculation", self.exposure_model)
         self.sensitivity = QCheckBox("Run component sensitivity analysis")
         self.sensitivity.setChecked(True)

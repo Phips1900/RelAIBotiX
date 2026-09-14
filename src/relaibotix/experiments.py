@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import csv
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Mapping
 
@@ -31,7 +32,8 @@ class ExperimentSpec:
     terminal_skill: str | int | None = None
     exclude_missing_terminal: bool = False
     keep_missing_terminal: bool = False
-    exposure_model: str = "bands"
+    exposure_model: str = "additive_normalized"
+    expected_input_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -42,13 +44,17 @@ class ExperimentManifest:
 
 
 def _resolve(base: Path, value: object, field: str) -> Path:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, (str, Path)) or not str(value).strip():
         raise ValueError(f"Experiment field '{field}' must be a non-empty path.")
     path = Path(value)
     return path if path.is_absolute() else (base / path).resolve()
 
 
-def load_experiment_manifest(path: str | Path) -> ExperimentManifest:
+def load_experiment_manifest(
+    path: str | Path,
+    *,
+    data_root: str | Path | None = None,
+) -> ExperimentManifest:
     """Load the small, versioned publication experiment schema."""
 
     manifest_path = Path(path).resolve()
@@ -61,6 +67,15 @@ def load_experiment_manifest(path: str | Path) -> ExperimentManifest:
     entries = raw.get("experiments")
     if not isinstance(entries, list) or not entries:
         raise ValueError("Experiment manifest requires a non-empty experiments list.")
+
+    selected_data_root = data_root or os.environ.get("RELAIBOTIX_DATA_ROOT")
+    if selected_data_root is None:
+        selected_data_root = raw.get("data_root")
+    input_base = (
+        _resolve(manifest_path.parent, selected_data_root, "data_root")
+        if selected_data_root is not None
+        else manifest_path.parent
+    )
 
     required = {
         "id", "setting", "platform", "task", "policy", "input_h5",
@@ -107,10 +122,17 @@ def load_experiment_manifest(path: str | Path) -> ExperimentManifest:
             raise ValueError(
                 f"Experiment {index} cannot exclude and retain missing terminal skills."
             )
-        exposure_model = entry.get("exposure_model", "bands")
-        if exposure_model not in {"bands", "continuous"}:
+        exposure_model = entry.get("exposure_model", "additive_normalized")
+        if exposure_model not in {
+            "bands",
+            "continuous",
+            "normalized_product",
+            "torque_distance",
+            "additive_normalized",
+        }:
             raise ValueError(
-                f"Experiment {index} exposure_model must be 'bands' or 'continuous'."
+                f"Experiment {index} exposure_model must be 'bands', 'continuous', "
+                "'normalized_product', 'torque_distance', or 'additive_normalized'."
             )
         experiments.append(ExperimentSpec(
             experiment_id=str(entry["id"]),
@@ -118,7 +140,7 @@ def load_experiment_manifest(path: str | Path) -> ExperimentManifest:
             platform=str(entry["platform"]),
             task=str(entry["task"]),
             policy=str(entry["policy"]),
-            input_h5=_resolve(manifest_path.parent, entry["input_h5"], "input_h5"),
+            input_h5=_resolve(input_base, entry["input_h5"], "input_h5"),
             robot_config=_resolve(
                 manifest_path.parent, entry["robot_config"], "robot_config"
             ),
@@ -130,6 +152,11 @@ def load_experiment_manifest(path: str | Path) -> ExperimentManifest:
             exclude_missing_terminal=exclude_missing_terminal,
             keep_missing_terminal=keep_missing_terminal,
             exposure_model=str(exposure_model),
+            expected_input_sha256=(
+                str(entry["input_sha256"])
+                if entry.get("input_sha256") is not None
+                else None
+            ),
         ))
     identifiers = [experiment.experiment_id for experiment in experiments]
     if len(set(identifiers)) != len(identifiers):
@@ -162,6 +189,10 @@ def configured_analyzer(
         },
         velocity_multipliers=assumptions.velocity_multipliers,
         effort_multipliers=assumptions.effort_multipliers,
+        normalized_product_reference_fraction=(
+            assumptions.normalized_product_reference_fraction
+        ),
+        normalized_product_window_seconds=assumptions.normalized_product_window_seconds,
         skill_names=skill_names,
     )
 
@@ -213,10 +244,16 @@ def write_experiment_summary(
             "mttf_h": reliability["repeated_run_mttf"]["hours"],
             "critical_components": " & ".join(critical),
         })
+        actual_input_sha256 = sha256_file(experiment.input_h5)
         provenance.append({
             "experiment_id": experiment.experiment_id,
             "input_h5": str(experiment.input_h5),
-            "input_sha256": sha256_file(experiment.input_h5),
+            "input_sha256": actual_input_sha256,
+            "expected_input_sha256": experiment.expected_input_sha256,
+            "input_checksum_verified": (
+                experiment.expected_input_sha256 is None
+                or actual_input_sha256 == experiment.expected_input_sha256
+            ),
             "robot_config": str(experiment.robot_config),
             "robot_config_sha256": sha256_file(experiment.robot_config),
             "label_source": experiment.label_source,

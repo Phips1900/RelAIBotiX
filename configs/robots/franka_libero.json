@@ -6,7 +6,7 @@
     "type": "simulated_fixed_manipulator"
   },
   "failure_probability_basis": "per_minute",
-  "failure_probability_source": "legacy_values_with_expert_power_supply_adjustment",
+  "failure_probability_source": "franka_20000h_arm_lifetime_equal_seven_joint_allocation; fides2009_nprd95_nonactuator_reference_rates; one_required_camera; illustrative_dual_controller",
   "exposure_assumptions": {
     "source": "expert_assumption_set_normalized_by_official_franka_limits",
     "position_step": 0.001,
@@ -16,14 +16,16 @@
     "effort_bands": [0.3, 0.6],
     "velocity_multipliers": [1.0, 1.5, 2.0],
     "effort_multipliers": [1.0, 2.0, 5.0],
-    "distance_multipliers": [1.0, 1.5, 2.0]
+    "distance_multipliers": [1.0, 1.5, 2.0],
+    "normalized_product_reference_fraction": 0.3,
+    "normalized_product_window_seconds": 1.0
   },
   "components": {
     "joint_1": {
       "type": "revolute_joint",
       "features": {"position": "joint_pos_1", "velocity": "joint_vel_1", "effort": null},
       "exposure_references": {"velocity": 2.175, "distance": 5.7946},
-      "failure_probability": 3.577e-8,
+      "failure_probability": 1.1904761199055258e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_joint_range"
@@ -32,7 +34,7 @@
       "type": "revolute_joint",
       "features": {"position": "joint_pos_2", "velocity": "joint_vel_2", "effort": null},
       "exposure_references": {"velocity": 2.175, "distance": 3.5256},
-      "failure_probability": 3.577e-8,
+      "failure_probability": 1.1904761199055258e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_joint_range"
@@ -41,7 +43,7 @@
       "type": "revolute_joint",
       "features": {"position": "joint_pos_3", "velocity": "joint_vel_3", "effort": null},
       "exposure_references": {"velocity": 2.175, "distance": 5.7946},
-      "failure_probability": 3.577e-8,
+      "failure_probability": 1.1904761199055258e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_joint_range"
@@ -50,7 +52,7 @@
       "type": "revolute_joint",
       "features": {"position": "joint_pos_4", "velocity": "joint_vel_4", "effort": null},
       "exposure_references": {"velocity": 2.175, "distance": 3.0020},
-      "failure_probability": 3.577e-8,
+      "failure_probability": 1.1904761199055258e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_joint_range"
@@ -59,7 +61,7 @@
       "type": "revolute_joint",
       "features": {"position": "joint_pos_5", "velocity": "joint_vel_5", "effort": null},
       "exposure_references": {"velocity": 2.61, "distance": 5.7946},
-      "failure_probability": 3.577e-8,
+      "failure_probability": 1.1904761199055258e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_joint_range"
@@ -68,7 +70,7 @@
       "type": "revolute_joint",
       "features": {"position": "joint_pos_6", "velocity": "joint_vel_6", "effort": null},
       "exposure_references": {"velocity": 2.61, "distance": 3.7700},
-      "failure_probability": 3.577e-8,
+      "failure_probability": 1.1904761199055258e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_joint_range"
@@ -77,7 +79,7 @@
       "type": "revolute_joint",
       "features": {"position": "joint_pos_7", "velocity": "joint_vel_7", "effort": null},
       "exposure_references": {"velocity": 2.61, "distance": 5.7946},
-      "failure_probability": 3.577e-8,
+      "failure_probability": 1.1904761199055258e-7,
       "redundancy": {"copies": 1, "mode": "parallel"},
       "distance_thresholds": [0.1, 0.3],
       "distance_unit": "fraction_of_joint_range"
@@ -97,7 +99,7 @@
     "power_supply": {
       "type": "power_supply",
       "always_active": true,
-      "failure_probability": 6.674e-9,
+      "failure_probability": 6.674e-8,
       "redundancy": {"copies": 1, "mode": "parallel"}
     },
     "camera": {

@@ -146,12 +146,18 @@ def analyze_reliability(
     behavior: BehavioralResult,
     config: RobotConfig,
     *,
-    exposure_model: str = "bands",
+    exposure_model: str = "additive_normalized",
 ) -> ReliabilityResult:
     """Create and solve one component fault tree for every observed skill."""
 
-    if exposure_model not in {"bands", "continuous"}:
-        raise ValueError("Exposure model must be 'bands' or 'continuous'.")
+    if exposure_model not in {
+        "bands", "continuous", "normalized_product", "torque_distance",
+        "additive_normalized",
+    }:
+        raise ValueError(
+            "Exposure model must be 'bands', 'continuous', 'normalized_product', "
+            "'torque_distance', or 'additive_normalized'."
+        )
     assumptions = config.exposure_assumptions
     expected_thresholds = {
         key: value
@@ -184,6 +190,12 @@ def analyze_reliability(
             "Behavioral results used different component exposure references. "
             "Run the behavior command again with the same robot configuration."
         )
+    combined_column = f"combined_weighted_time_{exposure_model}"
+    if not behavior.joint_summary.empty and combined_column not in behavior.joint_summary.columns:
+        raise ValueError(
+            "Behavioral results do not contain interval-aligned combined exposure. "
+            "Run the behavior command again with the current implementation."
+        )
     if exposure_model == "continuous":
         expected_multipliers = {
             "velocity": list(assumptions.velocity_multipliers),
@@ -203,6 +215,46 @@ def analyze_reliability(
             raise ValueError(
                 "Behavioral results do not contain continuous weighted-time columns. "
                 "Run the behavior command again."
+            )
+    normalized_metadata = behavior.metadata.get("normalized_product", {})
+    if exposure_model == "normalized_product":
+        expected_normalized = {
+            "reference_fraction": assumptions.normalized_product_reference_fraction,
+            "window_seconds": assumptions.normalized_product_window_seconds,
+        }
+        if not isinstance(normalized_metadata, dict) or any(
+            normalized_metadata.get(name) != value
+            for name, value in expected_normalized.items()
+        ):
+            raise ValueError(
+                "Behavioral results do not contain normalized-product exposure for "
+                "the configured reference fraction and window duration. Run the "
+                "behavior command again with the same robot configuration."
+            )
+    torque_distance_metadata = behavior.metadata.get("torque_distance", {})
+    if exposure_model == "torque_distance":
+        if (
+            not isinstance(torque_distance_metadata, dict)
+            or torque_distance_metadata.get("reference_fraction")
+            != assumptions.normalized_product_reference_fraction
+        ):
+            raise ValueError(
+                "Behavioral results do not contain torque-distance exposure for "
+                "the configured reference fraction. Run the behavior command again "
+                "with the same robot configuration."
+            )
+    additive_metadata = behavior.metadata.get("additive_normalized", {})
+    if exposure_model == "additive_normalized":
+        if (
+            not isinstance(additive_metadata, dict)
+            or additive_metadata.get("reference_fraction")
+            != assumptions.normalized_product_reference_fraction
+            or additive_metadata.get("centering") != "none"
+        ):
+            raise ValueError(
+                "Behavioral results do not contain uncentered additive-normalized "
+                "exposure for the configured reference fraction. Run the behavior "
+                "command again with the same robot configuration."
             )
     required_skill_columns = {"skill_id", "skill", "n_segments", "total_duration"}
     if not required_skill_columns.issubset(behavior.skill_summary.columns):
@@ -251,59 +303,209 @@ def analyze_reliability(
                 else float("nan")
             )
 
+            normalized_dimensions = (
+                normalized_metadata.get("available_dimensions", {}).get(name, [])
+                if isinstance(normalized_metadata, dict)
+                else []
+            )
+            torque_distance_components = (
+                torque_distance_metadata.get("available_components", [])
+                if isinstance(torque_distance_metadata, dict)
+                else []
+            )
+            additive_dimensions = (
+                additive_metadata.get("available_dimensions", {}).get(name, [])
+                if isinstance(additive_metadata, dict)
+                and isinstance(additive_metadata.get("available_dimensions"), dict)
+                else []
+            )
+            # Accept behavioral files produced by the first additive-model
+            # implementation, where availability was recorded only as a list.
+            if (
+                not additive_dimensions
+                and isinstance(additive_metadata, dict)
+                and name in additive_metadata.get("available_components", [])
+            ):
+                additive_dimensions = ["effort", "motion"]
             if component.exposure == "skill_time":
                 base_exposure = average_duration
                 weighted_velocity_exposure = average_duration
+                effort_factor = 1.0
+                combined_weighted_exposure = average_duration
+            elif exposure_model == "normalized_product" and normalized_dimensions:
+                base_exposure = average_duration
+                weighted_velocity_exposure = (
+                    float(usage["normalized_velocity_weighted_time"].sum())
+                    / occurrences
+                    if not usage.empty
+                    else 0.0
+                )
+                weighted_effort_exposure = (
+                    float(usage["normalized_effort_weighted_time"].sum())
+                    / occurrences
+                    if not usage.empty
+                    else 0.0
+                )
+                combined_weighted_exposure = (
+                    float(usage[combined_column].sum()) / occurrences
+                    if not usage.empty
+                    else 0.0
+                )
+                effort_factor = (
+                    weighted_effort_exposure / base_exposure
+                    if base_exposure > 0.0
+                    else 1.0
+                )
+            elif exposure_model == "normalized_product":
+                # Components without the references needed by the normalized
+                # product retain their measured active-time exposure.
+                base_exposure = average_active
+                weighted_velocity_exposure = average_active
+                effort_factor = 1.0
+                combined_weighted_exposure = average_active
+            elif exposure_model == "torque_distance" and name in torque_distance_components:
+                base_exposure = average_duration
+                combined_weighted_exposure = (
+                    float(usage[combined_column].sum()) / occurrences
+                    if not usage.empty
+                    else 0.0
+                )
+                weighted_velocity_exposure = combined_weighted_exposure
+                effort_factor = 1.0
+            elif exposure_model == "torque_distance":
+                base_exposure = average_active
+                weighted_velocity_exposure = average_active
+                effort_factor = 1.0
+                combined_weighted_exposure = average_active
+            elif exposure_model == "additive_normalized" and additive_dimensions:
+                base_exposure = average_active
+                torque_exposure = (
+                    float(usage["additive_normalized_torque_exposure"].sum())
+                    / occurrences
+                    if not usage.empty
+                    else 0.0
+                )
+                motion_exposure = (
+                    float(usage["additive_normalized_motion_exposure"].sum())
+                    / occurrences
+                    if not usage.empty
+                    else 0.0
+                )
+                weighted_velocity_exposure = base_exposure + motion_exposure
+                effort_factor = (
+                    (base_exposure + torque_exposure) / base_exposure
+                    if base_exposure > 0.0
+                    else 1.0
+                )
+                combined_weighted_exposure = (
+                    float(usage[combined_column].sum()) / occurrences
+                    if not usage.empty
+                    else 0.0
+                )
+            elif exposure_model == "additive_normalized":
+                base_exposure = average_active
+                weighted_velocity_exposure = average_active
+                effort_factor = 1.0
+                combined_weighted_exposure = average_active
             else:
-                base_exposure = sum(velocity_times)
+                base_exposure = average_active
+                velocity_total = sum(velocity_times)
                 if exposure_model == "bands":
-                    weighted_velocity_exposure = sum(
-                        duration * multiplier
+                    weighted_velocity_exposure = average_active + sum(
+                        duration * (multiplier - 1.0)
                         for duration, multiplier in zip(
                             velocity_times, assumptions.velocity_multipliers
                         )
                     )
                 else:
-                    weighted_velocity_exposure = (
+                    signal_weighted_velocity = (
                         float(usage["velocity_weighted_time_continuous"].sum())
                         / occurrences
                         if not usage.empty
                         else 0.0
                     )
-                if weighted_velocity_exposure == 0.0:
-                    base_exposure = average_active
-                    weighted_velocity_exposure = average_active
+                    weighted_velocity_exposure = (
+                        average_active + signal_weighted_velocity - velocity_total
+                    )
 
-            effort_total = sum(effort_times)
-            effort_factor = 1.0
-            if effort_total > 0.0:
+                effort_total = sum(effort_times)
                 if exposure_model == "bands":
-                    effort_weighted_exposure = sum(
-                        duration * multiplier
+                    effort_weighted_exposure = average_active + sum(
+                        duration * (multiplier - 1.0)
                         for duration, multiplier in zip(
                             effort_times, assumptions.effort_multipliers
                         )
                     )
                 else:
-                    effort_weighted_exposure = (
+                    signal_weighted_effort = (
                         float(usage["effort_weighted_time_continuous"].sum())
                         / occurrences
+                        if not usage.empty
+                        else 0.0
                     )
-                effort_factor = effort_weighted_exposure / effort_total
+                    effort_weighted_exposure = (
+                        average_active + signal_weighted_effort - effort_total
+                    )
+                effort_factor = (
+                    effort_weighted_exposure / base_exposure
+                    if base_exposure > 0.0
+                    else 1.0
+                )
+                combined_weighted_exposure = (
+                    float(usage[combined_column].sum()) / occurrences
+                    if not usage.empty
+                    else 0.0
+                )
             velocity_factor = (
                 weighted_velocity_exposure / base_exposure
                 if base_exposure > 0.0
                 else 1.0
             )
-            distance_band, distance_factor = _distance_exposure(
-                (
-                    average_distance_utilization
-                    if "distance" in component.exposure_references
-                    else average_distance
-                ),
-                component.distance_thresholds,
-                assumptions.distance_multipliers,
-            )
+            if exposure_model == "torque_distance" and name in torque_distance_components:
+                distance_band = "torque_distance"
+                distance_factor = (
+                    combined_weighted_exposure / base_exposure
+                    if base_exposure > 0.0
+                    else 1.0
+                )
+                effective_exposure = combined_weighted_exposure
+            elif exposure_model == "additive_normalized":
+                distance_band = (
+                    "additive_normalized"
+                    if additive_dimensions
+                    else "active_time_fallback"
+                )
+                distance_factor = (
+                    combined_weighted_exposure / base_exposure
+                    if base_exposure > 0.0
+                    else 1.0
+                )
+                effective_exposure = combined_weighted_exposure
+            elif exposure_model == "normalized_product" and normalized_dimensions:
+                normalized_distance_exposure = (
+                    float(usage["normalized_distance_weighted_time"].sum())
+                    / occurrences
+                    if not usage.empty
+                    else 0.0
+                )
+                distance_band = "normalized_product"
+                distance_factor = (
+                    normalized_distance_exposure / base_exposure
+                    if base_exposure > 0.0
+                    else 1.0
+                )
+                effective_exposure = combined_weighted_exposure
+            else:
+                distance_band, distance_factor = _distance_exposure(
+                    (
+                        average_distance_utilization
+                        if "distance" in component.exposure_references
+                        else average_distance
+                    ),
+                    component.distance_thresholds,
+                    assumptions.distance_multipliers,
+                )
+                effective_exposure = combined_weighted_exposure * distance_factor
             if exposure_model == "continuous":
                 distance_factor = _continuous_exposure_factor(
                     (
@@ -314,7 +516,7 @@ def analyze_reliability(
                     component.distance_thresholds,
                     assumptions.distance_multipliers,
                 )
-            effective_exposure = weighted_velocity_exposure * effort_factor * distance_factor
+                effective_exposure = combined_weighted_exposure * distance_factor
             rate = _hazard_rate(component.failure_probability, config.probability_basis)
             hazard = rate * effective_exposure
             probability = 1.0 if math.isinf(hazard) else -math.expm1(-hazard)
@@ -342,6 +544,13 @@ def analyze_reliability(
                 ),
                 "distance_band": distance_band,
                 "distance_factor": distance_factor,
+                "normalized_product_dimensions": "/".join(normalized_dimensions),
+                "normalized_product_reference_fraction": (
+                    assumptions.normalized_product_reference_fraction
+                ),
+                "normalized_product_window_seconds": (
+                    assumptions.normalized_product_window_seconds
+                ),
                 "velocity_multipliers": "/".join(map(str, assumptions.velocity_multipliers)),
                 "effort_multipliers": "/".join(map(str, assumptions.effort_multipliers)),
                 "distance_multipliers": "/".join(map(str, assumptions.distance_multipliers)),
@@ -353,6 +562,7 @@ def analyze_reliability(
                 "weighted_velocity_exposure": weighted_velocity_exposure,
                 "velocity_factor": velocity_factor,
                 "effort_factor": effort_factor,
+                "combined_weighted_exposure": combined_weighted_exposure,
                 "effective_exposure": effective_exposure,
                 "base_failure_probability": component.failure_probability,
                 "failure_probability_source": config.probability_source,
@@ -414,7 +624,7 @@ def analyze_component_sensitivity(
     if not math.isfinite(factor) or factor <= 0.0 or factor == 1.0:
         raise ValueError("Sensitivity factor must be positive and different from one.")
     selected_exposure_model = exposure_model or (
-        baseline.exposure_model if baseline is not None else "bands"
+        baseline.exposure_model if baseline is not None else "additive_normalized"
     )
     baseline_result = baseline or analyze_reliability(
         behavior,

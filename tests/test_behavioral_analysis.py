@@ -61,6 +61,155 @@ def test_skill_boundaries_preserve_all_episode_time_and_motion():
     assert result.metadata["interval_attribution"] == "left_endpoint"
 
 
+def test_normalized_product_uses_fixed_windows_across_skill_boundaries():
+    features = np.array([
+        [0.0, 0.3, 0.3],
+        [0.3, 0.3, 0.3],
+        [0.6, 0.3, 0.3],
+        [0.9, 0.3, 0.3],
+        [1.2, 0.3, 0.3],
+    ])
+    result = BehavioralAnalyzer(
+        component_features={
+            "joint_1": {
+                "position": ("position",),
+                "velocity": ("velocity",),
+                "effort": ("effort",),
+            }
+        },
+        component_references={
+            "joint_1": {"velocity": 1.0, "effort": 1.0, "distance": 1.0}
+        },
+        normalized_product_reference_fraction=0.3,
+        normalized_product_window_seconds=1.0,
+    ).analyze(
+        features=features,
+        feature_names=["position", "velocity", "effort"],
+        skill_labels=np.array([1, 2, 2, 2, 2]),
+        timestamps=np.array([0.0, 0.5, 1.0, 1.5, 2.0]),
+        episode_ids=np.zeros(5),
+    )
+
+    # In both one-second windows u_v=1, u_effort=1, and u_distance=2.
+    # The first window crosses the detector boundary, but its physical factor
+    # remains two and its intervals are attributed to their owning skills.
+    rows = result.joint_metrics.set_index("skill_id")
+    assert rows.loc[1, "combined_weighted_time_normalized_product"] == pytest.approx(1.0)
+    assert rows.loc[2, "combined_weighted_time_normalized_product"] == pytest.approx(3.0)
+    assert result.joint_summary[
+        "combined_weighted_time_normalized_product"
+    ].sum() == pytest.approx(4.0)
+    assert result.metadata["normalized_product"]["window_seconds"] == 1.0
+
+
+def test_torque_distance_weights_each_position_step_by_cubed_effort():
+    features = np.array([
+        [0.0, 0.3, 0.3],
+        [0.3, 0.3, 0.6],
+        [0.6, 0.3, 0.6],
+    ])
+    result = BehavioralAnalyzer(
+        component_features={
+            "joint_1": {
+                "position": ("position",),
+                "velocity": ("velocity",),
+                "effort": ("effort",),
+            }
+        },
+        component_references={
+            "joint_1": {"velocity": 1.0, "effort": 1.0, "distance": 1.0}
+        },
+        normalized_product_reference_fraction=0.3,
+    ).analyze(
+        features=features,
+        feature_names=["position", "velocity", "effort"],
+        skill_labels=np.array([1, 2, 2]),
+        timestamps=np.array([0.0, 1.0, 2.0]),
+        episode_ids=np.zeros(3),
+    )
+
+    # First interval: 1^3 * 0.3 / 0.3 = 1 equivalent second.
+    # Second interval: 2^3 * 0.3 / 0.3 = 8 equivalent seconds.
+    rows = result.joint_metrics.set_index("skill_id")
+    assert rows.loc[1, "combined_weighted_time_torque_distance"] == pytest.approx(1.0)
+    assert rows.loc[2, "combined_weighted_time_torque_distance"] == pytest.approx(8.0)
+    assert result.joint_summary[
+        "combined_weighted_time_torque_distance"
+    ].sum() == pytest.approx(9.0)
+    assert result.metadata["torque_distance"]["available_components"] == ["joint_1"]
+
+
+def test_additive_normalized_sums_active_time_torque_and_motion():
+    features = np.array([
+        [0.0, 0.3, 0.3],
+        [0.3, 0.3, 0.6],
+        [0.6, 0.3, 0.6],
+    ])
+    result = BehavioralAnalyzer(
+        component_features={
+            "joint_1": {
+                "position": ("position",),
+                "velocity": ("velocity",),
+                "effort": ("effort",),
+            }
+        },
+        component_references={
+            "joint_1": {"velocity": 1.0, "effort": 1.0, "distance": 1.0}
+        },
+        normalized_product_reference_fraction=0.3,
+    ).analyze(
+        features=features,
+        feature_names=["position", "velocity", "effort"],
+        skill_labels=np.array([1, 2, 2]),
+        timestamps=np.array([0.0, 1.0, 2.0]),
+        episode_ids=np.zeros(3),
+    )
+
+    rows = result.joint_metrics.set_index("skill_id")
+    # First interval: 1 s active + 1 s torque + 1 s motion.
+    assert rows.loc[1, "combined_weighted_time_additive_normalized"] == pytest.approx(3.0)
+    # Second interval: 1 s active + 2 s torque + 1 s motion.
+    assert rows.loc[2, "combined_weighted_time_additive_normalized"] == pytest.approx(4.0)
+    assert rows["additive_normalized_torque_exposure"].sum() == pytest.approx(3.0)
+    assert rows["additive_normalized_motion_exposure"].sum() == pytest.approx(2.0)
+    assert result.metadata["additive_normalized"]["centering"] == "none"
+
+
+def test_additive_normalized_uses_motion_when_effort_is_unavailable():
+    features = np.array([
+        [0.0, 0.3],
+        [0.3, 0.3],
+        [0.6, 0.3],
+    ])
+    result = BehavioralAnalyzer(
+        component_features={
+            "joint_1": {
+                "position": ("position",),
+                "velocity": ("velocity",),
+                "effort": (),
+            }
+        },
+        component_references={
+            "joint_1": {"velocity": 1.0, "distance": 1.0}
+        },
+        normalized_product_reference_fraction=0.3,
+    ).analyze(
+        features=features,
+        feature_names=["position", "velocity"],
+        skill_labels=np.array([1, 1, 1]),
+        timestamps=np.array([0.0, 1.0, 2.0]),
+        episode_ids=np.zeros(3),
+    )
+
+    row = result.joint_metrics.iloc[0]
+    assert row["additive_normalized_torque_exposure"] == pytest.approx(0.0)
+    assert row["additive_normalized_motion_exposure"] == pytest.approx(2.0)
+    assert row["combined_weighted_time_additive_normalized"] == pytest.approx(4.0)
+    assert result.metadata["additive_normalized"]["available_dimensions"] == {
+        "joint_1": ["motion"]
+    }
+
+
 def test_analysis_reports_numbered_and_named_joint_distance():
     features, labels, timestamps, episodes = sample_data()
     result = BehavioralAnalyzer().analyze(
@@ -166,6 +315,42 @@ def test_component_references_normalize_exposure_bands_and_distance():
     }
 
 
+def test_static_effort_exposure_is_continuous_at_zero_velocity():
+    def analyze(velocity: float):
+        return BehavioralAnalyzer(
+            component_features={
+                "joint_1": {
+                    "position": ("position",),
+                    "velocity": ("velocity",),
+                    "effort": ("effort",),
+                }
+            },
+        ).analyze(
+            features=np.array([
+                [0.0, velocity, 0.5],
+                [0.0, velocity, 0.5],
+                [0.0, velocity, 0.5],
+            ]),
+            feature_names=["position", "velocity", "effort"],
+            skill_labels=np.array([1, 1, 1]),
+            timestamps=np.array([0.0, 1.0, 2.0]),
+            episode_ids=np.array([0, 0, 0]),
+        ).joint_metrics.iloc[0]
+
+    stationary = analyze(0.0)
+    tiny_motion = analyze(1e-6)
+
+    assert stationary["active_time"] == pytest.approx(2.0)
+    assert stationary["combined_weighted_time_bands"] == pytest.approx(4.0)
+    assert stationary["combined_weighted_time_continuous"] == pytest.approx(8.5)
+    assert tiny_motion["combined_weighted_time_bands"] == pytest.approx(
+        stationary["combined_weighted_time_bands"]
+    )
+    assert tiny_motion["combined_weighted_time_continuous"] == pytest.approx(
+        stationary["combined_weighted_time_continuous"]
+    )
+
+
 def test_mobile_base_reports_translation_and_wrapped_rotation():
     features = np.array([
         [0.0, 0.0, 3.0, 0.3, 0.4, 0.2, 0.0],
@@ -231,6 +416,9 @@ def test_analyze_h5_and_export(tmp_path):
     assert result.metadata["behavioral_thresholds"]["velocity_bands"] == [0.5, 1.0]
     assert "velocity_weighted_time_continuous" in result.joint_summary
     assert "effort_weighted_time_continuous" in result.joint_summary
+    assert "combined_weighted_time_bands" in result.joint_summary
+    assert "combined_weighted_time_continuous" in result.joint_summary
+    assert result.metadata["joint_exposure_integration"] == "interval_aligned_product_v1"
     assert result.metadata["continuous_exposure_multipliers"]["effort"] == [1.0, 2.0, 5.0]
 
 

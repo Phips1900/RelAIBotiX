@@ -5,10 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "relaibotix"
 version = "0.1.0"
-description = "RelAIBotiX"
+description = "Skill-resolved reliability analysis for AI-controlled robotic systems"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{name = "Philipp"}]
+authors = [{name = "Philipp Grimmeisen"}]
+license = {file = "LICENSE"}
+keywords = ["robotics", "reliability", "fault-tree", "dtmc", "prism", "storm"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering",
+]
 
 dependencies = [
   "h5py>=3.10",
@@ -48,3 +58,8 @@ where = ["src"]
 
 [project.scripts]
 relaibotix = "relaibotix.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Phips1900/RelAIBotiX"
+Repository = "https://github.com/Phips1900/RelAIBotiX"
+Issues = "https://github.com/Phips1900/RelAIBotiX/issues"

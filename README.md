@@ -1,8 +1,8 @@
 # RelAIBotiX
 
-Dynamic reliability assessment for AI-controlled robotic systems.
+Dynamic, skill-resolved reliability assessment for AI-controlled robotic systems.
 
-This release branch is being reorganized around one portable workflow:
+RelAIBotIX provides one portable workflow to:
 
 1. validate or convert an HDF5 recording;
 2. run a pretrained skill detector;
@@ -11,6 +11,13 @@ This release branch is being reorganized around one portable workflow:
 
 All stages are available through the command-line interface, either independently
 or as one reproducible run.
+
+The frozen publication specification and compact result tables are available in
+[configs/experiments/paper.json](configs/experiments/paper.json) and
+[results/paper](results/paper). The mathematical model, assumptions, and source
+traceability are documented in [docs/METHODS.md](docs/METHODS.md); the case-study
+selection and reproduction protocol are documented in
+[docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
 
 ## Installation
 
@@ -21,6 +28,8 @@ git clone https://github.com/Phips1900/RelAIBotiX.git
 cd RelAIBotiX
 python -m pip install -e .
 ```
+
+For a non-editable installation from a tagged release, use `python -m pip install .`.
 
 Install the separately maintained pretrained-detector runtime when skill inference
 is needed:
@@ -58,6 +67,10 @@ entries marked optional, and optionally verifies every generated model with exac
 PRISM and STORM. It presents a combined sortable paper table plus policy-comparison
 plots for failure probability and repeated-operation MTTF. The generated CSV,
 Markdown, LaTeX, and provenance files remain the authoritative export artifacts.
+
+The publication manifest contains portable relative dataset paths and SHA-256
+checksums rather than machine-specific SSD paths. Select the released dataset root
+in the GUI before running the batch.
 
 Old paper recordings that already contain reviewed detector predictions can enable
 **Use stored predictions (legacy paper reproduction only)**. This option is explicit
@@ -285,18 +298,22 @@ These example values require review by a domain expert. The behavior and reliabi
 commands must use the same robot configuration; a recorded threshold mismatch is
 rejected instead of silently mixing assumption sets.
 
-For a motion component, RelAIBotiX applies the configured assumptions as:
+By default, a measured motion component uses the additive normalized exposure model:
 
 ```text
-effective exposure = velocity-weighted time × effort factor × distance factor
+effective exposure = active time
+                   + normalized effort-time (when effort is available)
+                   + normalized motion-time (when position is available)
 hazard             = base failure rate × effective exposure
 failure probability = 1 - exp(-hazard)
 ```
 
-This is an explicit relative-exposure model. RelAIBotiX does not claim that the
-example thresholds or multipliers are universally valid robot parameters.
+Each available term is used independently. For example, SO-ARM recordings have no
+effort channel and therefore use active time plus normalized motion; they do not
+silently lose the motion contribution. Components without either required reference
+retain measured active time. Always-active electronics use elapsed skill time.
 
-Two exposure calculations are available. `bands` assigns each active interval to
+Several exposure calculations are available. `bands` assigns each active interval to
 the configured low, medium, or high multiplier. `continuous` linearly interpolates
 the factor at every active timestamp between the same configured thresholds and
 multipliers, then caps it at the high multiplier. Distance is treated in the same
@@ -314,9 +331,81 @@ relaibotix reliability artifacts/behavior/behavior.json \
   --sensitivity
 ```
 
-Omit `--exposure-model` (or select `bands`) to reproduce the existing banded
-calculation. Publication manifests can set `"exposure_model": "continuous"` for
-each experiment.
+Omit `--exposure-model` to use `additive_normalized`, the supported default. Select
+`bands`, `continuous`, `normalized_product`, or `torque_distance` explicitly to
+reproduce or compare the retained alternative calculations. Publication manifests
+can override the model for individual experiments.
+
+The optional direct normalized-product model is selected with:
+
+```bash
+relaibotix reliability artifacts/behavior/behavior.json \
+  --config configs/robots/franka.json \
+  --output artifacts/reliability-normalized \
+  --exposure-model normalized_product
+```
+
+It evaluates fixed one-second physical windows independently of skill boundaries.
+For each measured component it calculates RMS velocity, RMS effort, and absolute
+traveled distance, divides each available quantity by 30% of its configured
+official limit/reference, and directly multiplies the normalized values. Missing
+telemetry dimensions are neutral: Franka uses velocity × effort × distance, while
+LIBERO and SO-ARM use velocity × distance because their current recordings do not
+contain effort. The resulting physical exposure is attributed to detector skills
+after calculation. Components without suitable normalized references retain their
+existing active-time exposure, and always-active electronics remain time-based.
+
+The optional `torque_distance` model accumulates traveled joint distance weighted
+by the cube of normalized effort. Velocity remains represented through
+`abs(delta_position) = abs(velocity) * delta_time`, so motion is not counted twice:
+
+```bash
+relaibotix reliability behavior.json configs/robots/franka.json \
+  --exposure-model torque_distance
+```
+
+The `additive_normalized` model preserves measured active operating time and adds
+linear normalized effort-time and motion-time contributions:
+
+```text
+effective exposure = active time
+                   + sum(abs(effort) / effort reference × delta time)
+                   + sum(abs(delta position) / velocity reference)
+```
+
+References are the configured fraction of each component limit. The terms are not
+centered or fitted, and the result must therefore be interpreted as a stress-adjusted
+baseline model rather than a reproduction of lifetime at the reference condition.
+Unavailable physical terms are omitted individually. Thus, position-only or
+position-and-velocity recordings still contribute normalized motion, while an
+available effort channel adds normalized load exposure.
+
+### Nominal actuator failure probabilities
+
+Robot-specific field-failure tables are not publicly available for SO-ARM 101 or
+Stretch 3. Their actuator probabilities therefore use a transparent component-life
+allocation rather than undocumented legacy constants. Probabilities are stored per
+minute and converted from a nominal lifetime (L) as
+`p = 1 - exp(-1 / (60 L))`.
+
+- SO-ARM uses six identical STS3215 actuators (five joints and the gripper). The
+  STS3215 specification documents a load-life qualification exceeding 100,000
+  cycles at one-fifth stall torque, but this is not treated as an MTTF. In the
+  absence of an STS3215 lifetime, each actuator uses the 50,000-hour generic servo
+  reference published by Oriental Motor: `3.33333277777784e-7` per minute.
+- Stretch uses four closed-loop stepper assemblies for its two wheels, lift, and
+  telescoping arm. Because the platform uses low-ratio belt drives rather than
+  harmonic gearheads, each uses the published generic 50,000-hour stepper bearing-life
+  reference: `3.33333277777784e-7` per minute. Its Dynamixel-driven gripper uses the
+  same generic 50,000-hour servo reference. The wrist and head are represented as
+  assemblies of three and two series servos, giving `9.999995000001667e-7` and
+  `6.666664444444938e-7` per minute, respectively.
+
+These are cross-family nominal references, not measured SO-ARM or Stretch field
+rates. The existing controller, power-supply, and camera rates remain separate
+assumptions. Sources: [STS3215 specification](https://core-electronics.com.au/attachments/uploads/sts3215-smart-servo-datasheet-translated.pdf),
+[Oriental Motor service-life reference](https://www.orientalmotor.com/support/service-life.html),
+and the [Stretch 3 hardware inventory](https://docs-arch.hello-robot.com/0.3/hardware/hardware_guide_stretch_3/).
 
 This writes the component exposure and failure calculations, bottom-up and BDD
 skill probabilities, the solved system DTMC, and `model.pm`/`model.pctl` for PRISM.
@@ -381,13 +470,15 @@ absorbing. Its expected accumulated time until failure is reported as
 the measured mixture of skill sequences; it is separate from the failure
 probability of one run.
 
-The complete legacy paper experiment set is declared in one small manifest and can
+The frozen publication experiment set is declared in one small manifest and can
 be regenerated with:
 
 ```bash
 relaibotix experiments run configs/experiments/paper.json \
-  --output artifacts/paper_validation \
-  --prism --prism-executable /path/to/prism
+  --data-root /path/to/relaibotix-paper-data \
+  --output artifacts/paper-reproduction \
+  --prism --prism-executable /path/to/prism \
+  --storm --storm-executable docker://movesrwth/storm:stable
 ```
 
 This writes per-experiment behavioral and reliability data plus combined CSV,
@@ -396,6 +487,10 @@ hashes and solver versions. The manifest explicitly uses predictions already sto
 in the legacy HDF5 recordings so the previous experiments can be recalculated. New
 case-study data must use `relaibotix run`, which performs skill inference before the
 behavioral and reliability stages.
+
+The data root defaults to `datasets/paper` and can be overridden with the command
+above, the GUI’s **Dataset root** field, or `RELAIBOTIX_DATA_ROOT`. Each input
+checksum is verified before its experiment starts.
 
 Each experiment can also declare `episode_selection` (`all` or `successful`),
 `terminal_skill` (a skill name or ID), and `exclude_missing_terminal` (boolean).
@@ -410,11 +505,10 @@ complete observed duration.
 ## Current case-study scope
 
 The HDF5 and analysis interfaces are robot-independent. Existing pretrained
-detectors cover mobile manipulation and Franka simulation. SO-ARM, real Franka,
-and LIBERO remain intentionally absent from the registry until their detector
-checkpoints exist. They can then be added without changing the RelAIBotiX interface,
-provided their checkpoints and canonical feature schemas are compatible with the
-detector package.
+detectors cover mobile manipulation and task-specific Franka simulation and
+real-hardware inference. The publication reproduction retains the reviewed SO-ARM
+and LIBERO predictions used in the preceding study; new recordings require a
+compatible detector checkpoint.
 
 The Hello Robot Stretch 3 configuration is available at
 `configs/robots/hello_stretch.json`. It maps the logged wheel, lift, telescoping-arm,
@@ -422,11 +516,12 @@ wrist, gripper, and head mechanisms plus the always-active controller, power sup
 and camera. Multi-axis wrist and head measurements are combined into one reliability
 component each: traveled distance is summed across axes, while velocity and effort
 use the most heavily loaded axis at each timestep so elapsed time is counted once.
-Its current failure probabilities and exposure bands are
-explicitly provisional and require expert review. The available mobile ACT rollout
-file is structurally valid but contains only unknown skill IDs, so detector inference
-must run before behavioral or reliability analysis.
+Its actuator failure probabilities use the documented derivation above and remain
+explicit modeling assumptions pending platform-specific field data. The mobile
+detector must run before behavioral or reliability analysis when an input contains
+only unknown skill IDs.
 
 ## License
 
-MIT
+MIT. When using RelAIBotIX in academic work, cite the versioned software release
+described in [CITATION.cff](CITATION.cff).
