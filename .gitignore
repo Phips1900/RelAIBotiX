@@ -58,7 +58,6 @@ multirun/
 # Artifacts & reports
 # -------------------------
 artifacts/*
-!artifacts/figures/
 !artifacts/checkpoints/
 eval_out/
 runs/

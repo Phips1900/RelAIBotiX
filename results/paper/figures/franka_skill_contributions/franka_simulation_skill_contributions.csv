@@ -1,0 +1,37 @@
+platform,experiment_id,scenario,policy,skill,failure_probability_contribution,share_of_total_percent,system_failure_probability_per_run
+simulation,sim_bottle_mass02_act,"Bottle, 0.2 kg",ACT,Move,2.375224907577518e-07,48.57468177818264,4.889841416612949e-07
+simulation,sim_bottle_mass02_act,"Bottle, 0.2 kg",ACT,Pick,4.319035170021664e-08,8.832669205483835,4.889841416612949e-07
+simulation,sim_bottle_mass02_act,"Bottle, 0.2 kg",ACT,Carry,1.629111439343091e-07,33.31624280918969,4.889841416612949e-07
+simulation,sim_bottle_mass02_act,"Bottle, 0.2 kg",ACT,Place,4.5360155269017357e-08,9.276406207143832,4.889841416612949e-07
+simulation,sim_bottle_mass02_pi05,"Bottle, 0.2 kg",π0.5,Move,2.809233916023201e-07,45.99939408687161,6.107110695236237e-07
+simulation,sim_bottle_mass02_pi05,"Bottle, 0.2 kg",π0.5,Pick,6.331117409836059e-08,10.366796552049655,6.107110695236237e-07
+simulation,sim_bottle_mass02_pi05,"Bottle, 0.2 kg",π0.5,Carry,2.2760592267288418e-07,37.26900232059407,6.107110695236237e-07
+simulation,sim_bottle_mass02_pi05,"Bottle, 0.2 kg",π0.5,Place,3.8870581150058755e-08,6.364807040484658,6.107110695236237e-07
+simulation,sim_bottle_mass02_smolvla,"Bottle, 0.2 kg",SmolVLA,Move,3.1549130831233817e-07,42.47899277829019,7.426995973256147e-07
+simulation,sim_bottle_mass02_smolvla,"Bottle, 0.2 kg",SmolVLA,Pick,5.5765930823514974e-08,7.508544642318697,7.426995973256147e-07
+simulation,sim_bottle_mass02_smolvla,"Bottle, 0.2 kg",SmolVLA,Carry,3.113369302217039e-07,41.91963094403125,7.426995973256147e-07
+simulation,sim_bottle_mass02_smolvla,"Bottle, 0.2 kg",SmolVLA,Place,6.010542796805776e-08,8.092831635359877,7.426995973256147e-07
+simulation,sim_bottle_mass50_act,"Bottle, 5 kg",ACT,Move,2.397032638319917e-07,45.693264481193,5.245921177959429e-07
+simulation,sim_bottle_mass50_act,"Bottle, 5 kg",ACT,Pick,4.049873141436197e-08,7.720041922192063,5.245921177959429e-07
+simulation,sim_bottle_mass50_act,"Bottle, 5 kg",ACT,Carry,1.9952319884966445e-07,38.03396812135775,5.245921177959429e-07
+simulation,sim_bottle_mass50_act,"Bottle, 5 kg",ACT,Place,4.48669236999248e-08,8.552725475257187,5.245921177959429e-07
+simulation,sim_bottle_mass50_pi05,"Bottle, 5 kg",π0.5,Move,2.683320632884409e-07,41.16414669159862,6.518586800760917e-07
+simulation,sim_bottle_mass50_pi05,"Bottle, 5 kg",π0.5,Pick,7.444779270896736e-08,11.420848564949239,6.518586800760917e-07
+simulation,sim_bottle_mass50_pi05,"Bottle, 5 kg",π0.5,Carry,2.6948570433619055e-07,41.34112386211278,6.518586800760917e-07
+simulation,sim_bottle_mass50_pi05,"Bottle, 5 kg",π0.5,Place,3.9593119742492813e-08,6.073880881339355,6.518586800760917e-07
+simulation,sim_bottle_mass50_smolvla,"Bottle, 5 kg",SmolVLA,Move,3.495832436539003e-07,42.2307033769355,8.277940353814397e-07
+simulation,sim_bottle_mass50_smolvla,"Bottle, 5 kg",SmolVLA,Pick,5.407762919067349e-08,6.532739652533861,8.277940353814397e-07
+simulation,sim_bottle_mass50_smolvla,"Bottle, 5 kg",SmolVLA,Carry,3.919537014831621e-07,47.349181647890646,8.277940353814397e-07
+simulation,sim_bottle_mass50_smolvla,"Bottle, 5 kg",SmolVLA,Place,3.2179461053703786e-08,3.887375322639984,8.277940353814397e-07
+simulation,sim_sorting_act,Color sorting,ACT,Move,2.2079906289428257e-07,56.726317359382925,3.8923567256347e-07
+simulation,sim_sorting_act,Color sorting,ACT,Pick,4.686543152629417e-08,12.040374207647206,3.8923567256347e-07
+simulation,sim_sorting_act,Color sorting,ACT,Carry,4.7674624499719125e-08,12.248267016673594,3.8923567256347e-07
+simulation,sim_sorting_act,Color sorting,ACT,Place,7.389655364317414e-08,18.985041416296276,3.8923567256347e-07
+simulation,sim_sorting_pi05,Color sorting,π0.5,Move,2.949028379725512e-07,56.09166518788953,5.257516192195738e-07
+simulation,sim_sorting_pi05,Color sorting,π0.5,Pick,7.355400292024218e-08,13.990257039897626,5.257516192195738e-07
+simulation,sim_sorting_pi05,Color sorting,π0.5,Carry,6.210385501167217e-08,11.812394435201016,5.257516192195738e-07
+simulation,sim_sorting_pi05,Color sorting,π0.5,Place,9.519092331510816e-08,18.10568333701181,5.257516192195738e-07
+simulation,sim_sorting_smolvla,Color sorting,SmolVLA,Move,3.3865223633309845e-07,61.67283781254007,5.491108376794031e-07
+simulation,sim_sorting_smolvla,Color sorting,SmolVLA,Pick,5.9350970888726e-08,10.808559368368886,5.491108376794031e-07
+simulation,sim_sorting_smolvla,Color sorting,SmolVLA,Carry,5.560742661623489e-08,10.126812803629482,5.491108376794031e-07
+simulation,sim_sorting_smolvla,Color sorting,SmolVLA,Place,9.550020384134377e-08,17.39179001546156,5.491108376794031e-07
