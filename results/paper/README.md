@@ -13,3 +13,11 @@ These tables contain the 31-experiment result set produced on 2026-09-14 with th
 The CSV is the machine-readable authoritative table. The Markdown and LaTeX files
 are renderings of the same rows. Full generated model files and HDF5 data are
 release assets rather than Git source files.
+
+## Supplementary sorting variations
+
+[Real-Franka sorting with changed objects and switched boxes](sorting_variations/README.md)
+contains five additional comparisons with the standard sorting baselines, including
+run-selection rules, numerical results, skill contributions, and solver verification.
+The supplementary analysis distinguishes task success from modeled hardware reliability
+and is separate from the frozen 31-experiment table above.

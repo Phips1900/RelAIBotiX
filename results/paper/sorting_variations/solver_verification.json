@@ -1,0 +1,142 @@
+[
+  {
+    "experiment": "act_new_colors",
+    "solver": "prism",
+    "model": "model",
+    "verified": true,
+    "version": "4.10.1"
+  },
+  {
+    "experiment": "act_new_colors",
+    "solver": "prism",
+    "model": "model_repeated_runs",
+    "verified": true,
+    "version": "4.10.1"
+  },
+  {
+    "experiment": "act_new_colors",
+    "solver": "storm",
+    "model": "model",
+    "verified": true,
+    "version": "1.14.0"
+  },
+  {
+    "experiment": "act_new_colors",
+    "solver": "storm",
+    "model": "model_repeated_runs",
+    "verified": true,
+    "version": "1.14.0"
+  },
+  {
+    "experiment": "pi05_new_colors",
+    "solver": "prism",
+    "model": "model",
+    "verified": true,
+    "version": "4.10.1"
+  },
+  {
+    "experiment": "pi05_new_colors",
+    "solver": "prism",
+    "model": "model_repeated_runs",
+    "verified": true,
+    "version": "4.10.1"
+  },
+  {
+    "experiment": "pi05_new_colors",
+    "solver": "storm",
+    "model": "model",
+    "verified": true,
+    "version": "1.14.0"
+  },
+  {
+    "experiment": "pi05_new_colors",
+    "solver": "storm",
+    "model": "model_repeated_runs",
+    "verified": true,
+    "version": "1.14.0"
+  },
+  {
+    "experiment": "pi05_switched_boxes",
+    "solver": "prism",
+    "model": "model",
+    "verified": true,
+    "version": "4.10.1"
+  },
+  {
+    "experiment": "pi05_switched_boxes",
+    "solver": "prism",
+    "model": "model_repeated_runs",
+    "verified": true,
+    "version": "4.10.1"
+  },
+  {
+    "experiment": "pi05_switched_boxes",
+    "solver": "storm",
+    "model": "model",
+    "verified": true,
+    "version": "1.14.0"
+  },
+  {
+    "experiment": "pi05_switched_boxes",
+    "solver": "storm",
+    "model": "model_repeated_runs",
+    "verified": true,
+    "version": "1.14.0"
+  },
+  {
+    "experiment": "smolvla_new_colors",
+    "solver": "prism",
+    "model": "model",
+    "verified": true,
+    "version": "4.10.1"
+  },
+  {
+    "experiment": "smolvla_new_colors",
+    "solver": "prism",
+    "model": "model_repeated_runs",
+    "verified": true,
+    "version": "4.10.1"
+  },
+  {
+    "experiment": "smolvla_new_colors",
+    "solver": "storm",
+    "model": "model",
+    "verified": true,
+    "version": "1.14.0"
+  },
+  {
+    "experiment": "smolvla_new_colors",
+    "solver": "storm",
+    "model": "model_repeated_runs",
+    "verified": true,
+    "version": "1.14.0"
+  },
+  {
+    "experiment": "smolvla_switched_boxes",
+    "solver": "prism",
+    "model": "model",
+    "verified": true,
+    "version": "4.10.1"
+  },
+  {
+    "experiment": "smolvla_switched_boxes",
+    "solver": "prism",
+    "model": "model_repeated_runs",
+    "verified": true,
+    "version": "4.10.1"
+  },
+  {
+    "experiment": "smolvla_switched_boxes",
+    "solver": "storm",
+    "model": "model",
+    "verified": true,
+    "version": "1.14.0"
+  },
+  {
+    "experiment": "smolvla_switched_boxes",
+    "solver": "storm",
+    "model": "model_repeated_runs",
+    "verified": true,
+    "version": "1.14.0"
+  }
+]
